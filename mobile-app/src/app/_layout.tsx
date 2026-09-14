@@ -1,18 +1,18 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from 'expo-router';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <Stack>
+      {/* Hide the top header on the Welcome screen */}
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      
+      {/* Show standard headers with back buttons for Auth screens */}
+      <Stack.Screen name="login" options={{ title: 'Login' }} />
+      <Stack.Screen name="signup" options={{ title: 'Sign Up' }} />
+      
+      {/* The Dashboard and Lesson screens */}
+      <Stack.Screen name="dashboard" options={{ title: 'ASCEND Dashboard', headerShown: false }} />
+      <Stack.Screen name="lesson" options={{ title: 'CBF Lesson' }} />
+    </Stack>
   );
 }
