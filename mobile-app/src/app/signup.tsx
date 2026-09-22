@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Button, ScrollView, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Button, ScrollView, Alert, ImageBackground } from 'react-native';
+import { router, Stack } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
 export default function SignUpScreen() {
@@ -120,166 +120,179 @@ export default function SignUpScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backIconText}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Sign Up</Text>
-      </View>
+    
+    <ImageBackground 
+      // NOTE: If you dragged bg.jpeg into the 'app' folder earlier, use require('./bg.jpeg') instead!
+      source={require('../../assets/images/bg.jpeg')} 
+      style={styles.backgroundContainer}
+      resizeMode="cover"
+    >
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.container}>
+        <View style={styles.headerBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Text style={styles.backIconText}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Sign Up</Text>
+        </View>
 
-      {authStep === 1 && (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.formContainer}>
-            
-            <Text style={styles.inputLabel}>First Name</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput style={styles.textInput} value={firstName} onChangeText={setFirstName} placeholder="First Name" />
-            </View>
-
-            <Text style={styles.inputLabel}>Last Name</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput style={styles.textInput} value={lastName} onChangeText={setLastName} placeholder="Last Name" />
-            </View>
-
-            <Text style={styles.inputLabel}>Email Address</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput style={styles.textInput} value={email} onChangeText={setEmail} placeholder="Email Address" autoCapitalize="none" keyboardType="email-address" />
-            </View>
-
-            {/* --- Password Field with Show/Hide --- */}
-            <Text style={styles.inputLabel}>Password</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput 
-                style={styles.textInput} 
-                value={password} 
-                onChangeText={setPassword} 
-                placeholder="Password" 
-                secureTextEntry={!showPassword} 
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Text style={styles.showHideText}>{showPassword ? 'Hide' : 'Show'}</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.helperText}>
-              Must be at least 8 characters, include an uppercase letter, a lowercase letter, a number, and a special character.
-            </Text>
-
-            {/* --- Confirm Password Field with Show/Hide --- */}
-            <Text style={styles.inputLabel}>Re-enter Password</Text>
-            <View style={[styles.inputWrapper, passwordError ? styles.inputErrorBorder : null, { marginBottom: 25 }]}>
-              <TextInput 
-                style={styles.textInput} 
-                value={confirmPassword} 
-                onChangeText={setConfirmPassword} 
-                placeholder="Re-enter Password" 
-                secureTextEntry={!showConfirmPassword} 
-              />
-              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-                <Text style={styles.showHideText}>{showConfirmPassword ? 'Hide' : 'Show'}</Text>
-              </TouchableOpacity>
-            </View>
-            {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
-
-            <Text style={styles.inputLabel}>Are you enrolled in Dr. Jose P. Rizal Senior High School?</Text>
-            <View style={styles.radioContainer}>
-              <TouchableOpacity 
-                style={[styles.radioButton, isEnrolled === true && styles.radioSelected]} 
-                onPress={() => setIsEnrolled(true)}
-              >
-                <Text style={[styles.radioText, isEnrolled === true && styles.radioTextSelected]}>Yes</Text>
-              </TouchableOpacity>
+        {authStep === 1 && (
+          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.formContainer}>
               
-              <TouchableOpacity 
-                style={[styles.radioButton, isEnrolled === false && styles.radioSelected]} 
-                onPress={() => { setIsEnrolled(false); setLrn(''); }}
-              >
-                <Text style={[styles.radioText, isEnrolled === false && styles.radioTextSelected]}>No</Text>
-              </TouchableOpacity>
-            </View>
-
-            {isEnrolled && (
-              <View style={styles.conditionalContainer}>
-                <Text style={styles.inputLabel}>Learner Reference Number (LRN)</Text>
-                <View style={styles.inputWrapper}>
-                  <TextInput style={styles.textInput} value={lrn} onChangeText={setLrn} placeholder="12-digit LRN" keyboardType="numeric" />
-                </View>
+              <Text style={styles.inputLabel}>First Name</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput style={styles.textInput} value={firstName} onChangeText={setFirstName} placeholder="First Name" />
               </View>
-            )}
 
-            {/* --- Inline Strand Dropdown (No Overlap) --- */}
-            <Text style={styles.inputLabel}>Select Learning Strand</Text>
-            <View style={styles.dropdownContainer}>
-              <TouchableOpacity 
-                style={[styles.dropdownHeader, showDropdown && styles.dropdownHeaderOpen]} 
-                onPress={() => setShowDropdown(!showDropdown)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.dropdownHeaderText, !strand && {color: '#999'}]}>
-                  {strand === 'HUMMS' ? 'HUMMS' : strand === 'CBF' ? 'CBF (Cookery, Bakery, and Food and Beverages)' : 'Select a strand...'}
-                </Text>
-                <Text style={styles.dropdownArrow}>{showDropdown ? '▲' : '▼'}</Text>
-              </TouchableOpacity>
+              <Text style={styles.inputLabel}>Last Name</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput style={styles.textInput} value={lastName} onChangeText={setLastName} placeholder="Last Name" />
+              </View>
 
-              {showDropdown && (
-                <View style={styles.dropdownList}>
-                  <TouchableOpacity 
-                    style={styles.dropdownItem} 
-                    onPress={() => { setStrand('HUMMS'); setShowDropdown(false); }}
-                  >
-                    <Text style={styles.dropdownItemText}>HUMMS</Text>
-                  </TouchableOpacity>
-                  <View style={styles.dropdownDivider} />
-                  <TouchableOpacity 
-                    style={styles.dropdownItem} 
-                    onPress={() => { setStrand('CBF'); setShowDropdown(false); }}
-                  >
-                    <Text style={styles.dropdownItemText}>CBF (Cookery, Bakery, and Food and Beverages)</Text>
-                  </TouchableOpacity>
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput style={styles.textInput} value={email} onChangeText={setEmail} placeholder="Email Address" autoCapitalize="none" keyboardType="email-address" />
+              </View>
+
+              {/* --- Password Field with Show/Hide --- */}
+              <Text style={styles.inputLabel}>Password</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput 
+                  style={styles.textInput} 
+                  value={password} 
+                  onChangeText={setPassword} 
+                  placeholder="Password" 
+                  secureTextEntry={!showPassword} 
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  <Text style={styles.showHideText}>{showPassword ? 'Hide' : 'Show'}</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.helperText}>
+                Must be at least 8 characters, include an uppercase letter, a lowercase letter, a number, and a special character.
+              </Text>
+
+              {/* --- Confirm Password Field with Show/Hide --- */}
+              <Text style={styles.inputLabel}>Re-enter Password</Text>
+              <View style={[styles.inputWrapper, passwordError ? styles.inputErrorBorder : null, { marginBottom: 25 }]}>
+                <TextInput 
+                  style={styles.textInput} 
+                  value={confirmPassword} 
+                  onChangeText={setConfirmPassword} 
+                  placeholder="Re-enter Password" 
+                  secureTextEntry={!showConfirmPassword} 
+                />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                  <Text style={styles.showHideText}>{showConfirmPassword ? 'Hide' : 'Show'}</Text>
+                </TouchableOpacity>
+              </View>
+              {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+
+              <Text style={styles.inputLabel}>Are you enrolled in Dr. Jose P. Rizal Senior High School?</Text>
+              <View style={styles.radioContainer}>
+                <TouchableOpacity 
+                  style={[styles.radioButton, isEnrolled === true && styles.radioSelected]} 
+                  onPress={() => setIsEnrolled(true)}
+                >
+                  <Text style={[styles.radioText, isEnrolled === true && styles.radioTextSelected]}>Yes</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.radioButton, isEnrolled === false && styles.radioSelected]} 
+                  onPress={() => { setIsEnrolled(false); setLrn(''); }}
+                >
+                  <Text style={[styles.radioText, isEnrolled === false && styles.radioTextSelected]}>No</Text>
+                </TouchableOpacity>
+              </View>
+
+              {isEnrolled && (
+                <View style={styles.conditionalContainer}>
+                  <Text style={styles.inputLabel}>Learner Reference Number (LRN)</Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput style={styles.textInput} value={lrn} onChangeText={setLrn} placeholder="12-digit LRN" keyboardType="numeric" />
+                  </View>
                 </View>
               )}
+
+              {/* --- Inline Strand Dropdown (No Overlap) --- */}
+              <Text style={styles.inputLabel}>Select Learning Strand</Text>
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity 
+                  style={[styles.dropdownHeader, showDropdown && styles.dropdownHeaderOpen]} 
+                  onPress={() => setShowDropdown(!showDropdown)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dropdownHeaderText, !strand && {color: '#999'}]}>
+                    {strand === 'HUMMS' ? 'HUMMS' : strand === 'CBF' ? 'CBF (Cookery, Bakery, and Food and Beverages)' : 'Select a strand...'}
+                  </Text>
+                  <Text style={styles.dropdownArrow}>{showDropdown ? '▲' : '▼'}</Text>
+                </TouchableOpacity>
+
+                {showDropdown && (
+                  <View style={styles.dropdownList}>
+                    <TouchableOpacity 
+                      style={styles.dropdownItem} 
+                      onPress={() => { setStrand('HUMMS'); setShowDropdown(false); }}
+                    >
+                      <Text style={styles.dropdownItemText}>HUMMS</Text>
+                    </TouchableOpacity>
+                    <View style={styles.dropdownDivider} />
+                    <TouchableOpacity 
+                      style={styles.dropdownItem} 
+                      onPress={() => { setStrand('CBF'); setShowDropdown(false); }}
+                    >
+                      <Text style={styles.dropdownItemText}>CBF (Cookery, Bakery, and Food and Beverages)</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
             </View>
+          </ScrollView>
+        )}
 
-          </View>
-        </ScrollView>
-      )}
-
-      {authStep === 2 && (
-        <View style={styles.cardStepContainer}>
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>Check your email!</Text>
-            <Text style={styles.subText}>We sent an 8-digit verification code to {email}.</Text>
-            
-            <TextInput 
-              style={styles.otpInput} 
-              placeholder="12345678" 
-              value={otpCode} 
-              onChangeText={setOtpCode} 
-              keyboardType="number-pad" 
-              maxLength={8} 
-            />
-            
-            <View style={styles.buttonGap}>
-              <Button title="Verify & Complete Sign Up" onPress={handleVerifyCode} color="#2e64e5" />
-              <Button title="← Back to Edit Email" onPress={() => setAuthStep(1)} color="#6c757d" />
+        {authStep === 2 && (
+          <View style={styles.cardStepContainer}>
+            <View style={styles.card}>
+              <Text style={styles.cardLabel}>Check your email!</Text>
+              <Text style={styles.subText}>We sent an 8-digit verification code to {email}.</Text>
+              
+              <TextInput 
+                style={styles.otpInput} 
+                placeholder="12345678" 
+                value={otpCode} 
+                onChangeText={setOtpCode} 
+                keyboardType="number-pad" 
+                maxLength={8} 
+              />
+              
+              <View style={styles.buttonGap}>
+                <Button title="Verify & Complete Sign Up" onPress={handleVerifyCode} color="#2e64e5" />
+                <Button title="← Back to Edit Email" onPress={() => setAuthStep(1)} color="#6c757d" />
+              </View>
             </View>
           </View>
-        </View>
-      )}
+        )}
 
-      {authStep === 1 && (
-        <View style={styles.footerButtonContainer}>
-          <TouchableOpacity style={styles.footerButton} onPress={handleSignUpAndSendOTP} activeOpacity={0.8}>
-            <Text style={styles.footerButtonText}>Sign Up</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
+        {authStep === 1 && (
+          <View style={styles.footerButtonContainer}>
+            <TouchableOpacity style={styles.footerButton} onPress={handleSignUpAndSendOTP} activeOpacity={0.8}>
+              <Text style={styles.footerButtonText}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  // 🟢 NEW: Makes the background image fill the screen
+  backgroundContainer: { flex: 1, width: '100%', height: '100%' },
+
+  // 🟢 UPDATED: Changed from solid #f5f5f5 to a semi-transparent white overlay to match index.tsx
+  container: { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.70)' },
   scrollContent: { paddingBottom: 150 }, 
 
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 60, paddingHorizontal: 20, marginBottom: 10 },
@@ -293,7 +306,6 @@ const styles = StyleSheet.create({
   inputErrorBorder: { borderBottomColor: '#d9534f', borderBottomWidth: 2 },
   textInput: { flex: 1, fontSize: 16, color: '#333' },
   
-  // New Show/Hide Text Style
   showHideText: { fontSize: 14, color: '#2e64e5', fontWeight: '600', paddingHorizontal: 5 },
 
   helperText: { fontSize: 12, color: '#888', marginTop: 4, marginBottom: 5, lineHeight: 16 },
@@ -307,7 +319,6 @@ const styles = StyleSheet.create({
 
   conditionalContainer: { marginTop: 5, padding: 15, backgroundColor: '#f0f4ff', borderRadius: 8, borderWidth: 1, borderColor: '#d0ddff' },
 
-  // Updated Inline Dropdown Styles
   dropdownContainer: { marginBottom: 30 },
   dropdownHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 15 },
   dropdownHeaderOpen: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 },

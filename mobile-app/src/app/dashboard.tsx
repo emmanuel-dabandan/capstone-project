@@ -79,28 +79,28 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      
-      {/* 🟠 Gamification Header */}
-      <View style={styles.headerBar}>
-        <View style={styles.statPill}>
-          <Text style={styles.statIcon}>⭐</Text>
-          <Text style={styles.statText}>{xp} XP</Text>
+      <View style={styles.UpperColor}>
+        {/* 🟠 Gamification Header */}
+        <View style={styles.headerBar}>
+          <View style={styles.statPill}>
+            <Text style={styles.statIcon}>⭐</Text>
+            <Text style={styles.statText}>{xp} XP</Text>
+          </View>
+          
+          <View style={[styles.statPill, { borderColor: '#ff9800', backgroundColor: '#fff3e0' }]}>
+            <Text style={styles.statIcon}>🔥</Text>
+            <Text style={[styles.statText, { color: '#e65100' }]}>{streak} Day Streak</Text>
+          </View>
         </View>
-        
-        <View style={[styles.statPill, { borderColor: '#ff9800', backgroundColor: '#fff3e0' }]}>
-          <Text style={styles.statIcon}>🔥</Text>
-          <Text style={[styles.statText, { color: '#e65100' }]}>{streak} Day Streak</Text>
-        </View>
+
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          {/* 🟠 Welcome Text */}
+          <View style={styles.welcomeContainer}>
+            <Text style={styles.greetingText}>Ready to learn,</Text>
+            <Text style={styles.nameText}>{firstName}?</Text>
+          </View>
       </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* 🟠 Welcome Text */}
-        <View style={styles.welcomeContainer}>
-          <Text style={styles.greetingText}>Ready to learn,</Text>
-          <Text style={styles.nameText}>{firstName}?</Text>
-        </View>
-
         {/* 🟠 Today's Challenge */}
         <View style={styles.challengeCard}>
           <View style={styles.challengeHeader}>
@@ -153,7 +153,7 @@ export default function DashboardScreen() {
                       styles.circularProgress, 
                       { 
                         // Muted dark teal for 0%, vibrant yellow/orange for active progress
-                        borderColor: module.progress === 0 ? '#3A5A66' : '#E8A34A',
+                        borderColor: module.progress === 0 ? '#000000' : '#fbfbfb',
                       }
                     ]}>
                       <Text style={[styles.circularProgressText, { opacity: module.progress === 0 ? 0.5 : 1 }]}>
@@ -198,7 +198,10 @@ export default function DashboardScreen() {
           <Text style={styles.navTextActive}>Home</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity 
+          style={styles.navItem} 
+          onPress={() => router.push('/learn' as any)}
+        >
           <Text style={styles.navIcon}>📚</Text>
           <Text style={styles.navText}>Learn</Text>
         </TouchableOpacity>
@@ -219,6 +222,7 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  UpperColor: {color: '#c76e60'}
   safeArea: { flex: 1, backgroundColor: '#fcfaf8' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8' },
   scrollContent: { paddingBottom: 100 }, 
@@ -245,7 +249,7 @@ const styles = StyleSheet.create({
   
   // 🟢 INSPO LAYOUT STYLES START HERE 🟢
   subjectCard: { 
-    backgroundColor: '#224b55', // Deep Teal Background
+    backgroundColor: '#5480e5', // Deep Teal Background
     borderRadius: 24,           // Highly rounded corners
     padding: 20, 
     elevation: 4, 
@@ -264,11 +268,11 @@ const styles = StyleSheet.create({
 
   // Action Buttons (Moved to the left column under text)
   cardButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, alignSelf: 'flex-start' }, // Pill shape, wraps text
-  startButton: { backgroundColor: '#3A5A66' }, // Muted button for unstarted
-  continueButton: { backgroundColor: '#E8A34A' }, // Yellow-orange from inspo image
+  startButton: { backgroundColor: '#fefefe' }, // Muted button for unstarted
+  continueButton: { backgroundColor: '#fefefe' }, // Yellow-orange from inspo image
   cardButtonText: { fontSize: 13, fontWeight: 'bold' },
-  startButtonText: { color: '#ffffff' },
-  continueButtonText: { color: '#ffffff' },
+  startButtonText: { color: '#000000' },
+  continueButtonText: { color: '#050505' },
 
   // Circular Progress (Pure RN, Solid Border)
   circularProgress: { width: 70, height: 70, borderRadius: 35, borderWidth: 6, justifyContent: 'center', alignItems: 'center' },
