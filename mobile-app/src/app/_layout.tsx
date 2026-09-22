@@ -2,17 +2,16 @@ import { Stack } from 'expo-router';
 
 export default function RootLayout() {
   return (
-    <Stack>
-      {/* Hide the top header on the Welcome screen */}
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+    // 🟢 Hides the header globally across all screens in the app
+    <Stack screenOptions={{ headerShown: false }}>
       
-      {/* Show standard headers with back buttons for Auth screens */}
-      <Stack.Screen name="login" options={{ title: 'Login' }} />
-      <Stack.Screen name="signup" options={{ title: 'Sign Up' }} />
+      <Stack.Screen name="index" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="signup" />
+      <Stack.Screen name="dashboard" />
+      <Stack.Screen name="learn" />
+      <Stack.Screen name="lesson" />
       
-      {/* The Dashboard and Lesson screens */}
-      <Stack.Screen name="dashboard" options={{ title: 'ASCEND Dashboard', headerShown: false }} />
-      <Stack.Screen name="lesson" options={{ title: 'CBF Lesson' }} />
     </Stack>
   );
 }

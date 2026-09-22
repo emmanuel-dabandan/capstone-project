@@ -1,11 +1,52 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
+
+
+// 🟢 NEW: Dynamic SVG Progress Ring Component
+const ProgressCircle = ({ progress }: { progress: number }) => {
+  const size = 70;
+  const strokeWidth = 6;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  // Calculate how much of the ring should be empty
+  const fillAmount = circumference - (progress / 100) * circumference;
+  const isZero = progress === 0;
+
+  return (
+    <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
+      <Svg width={size} height={size} style={{ position: 'absolute' }}>
+        {/* Faded Background Track */}
+        <Circle 
+          cx={size / 2} cy={size / 2} r={radius} 
+          stroke={isZero ? '#00000020' : '#ffffff40'} 
+          strokeWidth={strokeWidth} fill="none" 
+        />
+        {/* Active Progress Ring */}
+        <Circle 
+          cx={size / 2} cy={size / 2} r={radius} 
+          stroke={isZero ? '#000000' : '#ffffff'} 
+          strokeWidth={strokeWidth} fill="none" 
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={fillAmount}
+          strokeLinecap="round" // Gives the ends of the progress bar rounded edges
+          rotation="-90" // Starts the progress bar at 12 o'clock
+          origin={`${size / 2}, ${size / 2}`}
+        />
+      </Svg>
+      <Text style={[styles.circularProgressText, { opacity: isZero ? 0.5 : 1 }]}>
+        {progress}%
+      </Text>
+    </View>
+  );
+};
 
 export default function DashboardScreen() {
   const learningModules = [
@@ -25,6 +66,16 @@ export default function DashboardScreen() {
   const [streak, setStreak] = useState(5);
   const [timeLeft, setTimeLeft] = useState(38400);
 
+  // 🟢 NEW: State to hold the infinite scrolling modules
+// 🟢 NEW: Creates 100 copies of your 6 subjects (600 cards total)
+  // 🟢 Creates 600 unique objects so React never sees a duplicate key
+  const infiniteModules = Array(100)
+    .fill(learningModules)
+    .flat()
+    .map((module, index) => ({
+      ...module,
+      uniqueId: `card-${index}` // e.g., "card-0", "card-1", "card-599"
+    }));
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -78,123 +129,133 @@ export default function DashboardScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.UpperColor}>
-        {/* 🟠 Gamification Header */}
-        <View style={styles.headerBar}>
-          <View style={styles.statPill}>
-            <Text style={styles.statIcon}>⭐</Text>
-            <Text style={styles.statText}>{xp} XP</Text>
-          </View>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      
+      <View style={styles.mainBackground}>
+        
+        <View style={styles.topSection}>
           
-          <View style={[styles.statPill, { borderColor: '#ff9800', backgroundColor: '#fff3e0' }]}>
-            <Text style={styles.statIcon}>🔥</Text>
-            <Text style={[styles.statText, { color: '#e65100' }]}>{streak} Day Streak</Text>
+          <View style={styles.headerBar}>
+            <View style={styles.statPill}>
+              <Text style={styles.statTextXP}>{xp} XP</Text>
+            </View>
+            
+            <View style={[styles.statPill, { borderColor: '#ff9800', backgroundColor: '#fff3e0' }]}>
+              <Text style={[styles.statText, { color: '#e65100' }]}>{streak} Day Streak</Text>
+            </View>
           </View>
-        </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          {/* 🟠 Welcome Text */}
           <View style={styles.welcomeContainer}>
             <Text style={styles.greetingText}>Ready to learn,</Text>
             <Text style={styles.nameText}>{firstName}?</Text>
           </View>
-      </View>
-        {/* 🟠 Today's Challenge */}
-        <View style={styles.challengeCard}>
-          <View style={styles.challengeHeader}>
-            <Text style={styles.challengeTitle}>Today's Challenge</Text>
-            <TouchableOpacity style={styles.challengeButton}>
-              <Text style={styles.challengeButtonText}>
-                <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
-              </Text>
+
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      
+          <View style={styles.challengeCard}>
+            <View style={styles.challengeHeader}>
+              <Text style={styles.challengeTitle}>Today's Challenge</Text>
+              <TouchableOpacity style={styles.challengeButton}>
+                <Text style={styles.challengeButtonText}>
+                  <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.carouselContainer}>
+            <Text style={styles.sectionTitle}>Your Learning Path</Text>
+            
+            <FlatList 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              snapToInterval={CARD_WIDTH + 15}
+              decelerationRate="fast"
+              contentContainerStyle={styles.carouselContent}
+              data={infiniteModules}
+              
+              // 🟢 Tell FlatList to use our new guaranteed unique ID
+              keyExtractor={(item) => item.uniqueId}
+              
+              initialScrollIndex={learningModules.length * 50} 
+              
+              getItemLayout={(data, index) => ({
+                length: CARD_WIDTH + 15,
+                offset: (CARD_WIDTH + 15) * index,
+                index,
+              })}
+
+              renderItem={({ item: module }) => (
+                // 🟢 Ensure there is NO key property on this View!
+                <View style={[styles.subjectCard, { width: CARD_WIDTH }]}>
+                  <View style={styles.cardContentRow}>
+                    
+                    {/* Left Side (65%): Text & Button */}
+                    <View style={styles.cardLeft}>
+                      <Text style={styles.subjectTitle} numberOfLines={2}>
+                        {module.title}
+                      </Text>
+                      <Text style={styles.subjectSubtitle} numberOfLines={1}>
+                        {module.subtitle}
+                      </Text>
+
+                      <TouchableOpacity 
+                        style={[styles.cardButton, module.progress === 0 ? styles.startButton : styles.continueButton]}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.cardButtonText, module.progress === 0 ? styles.startButtonText : styles.continueButtonText]}>
+                          {module.progress === 0 ? 'Start Task' : 'View Task'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                   {/* Right Side (35%): Dynamic Circular Progress */}
+                    <View style={styles.cardRight}>
+                      <ProgressCircle progress={module.progress} />
+                    </View>
+
+                  </View>
+                </View>
+              )}
+            />
+          </View>
+
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Recent Updates</Text>
+            
+            <TouchableOpacity activeOpacity={0.7} style={styles.seeAllButton}>
+              <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* 🟠 Main Progress Area (Swipeable Subjects) */}
-        <View style={styles.carouselContainer}>
-          <Text style={styles.sectionTitle}>Your Learning Path</Text>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            snapToInterval={CARD_WIDTH + 15}
-            decelerationRate="fast"
-            contentContainerStyle={styles.carouselContent}
-          >
-            {learningModules.map((module) => (
-              <View key={module.id} style={[styles.subjectCard, { width: CARD_WIDTH }]}>
-                <View style={styles.cardContentRow}>
-                  
-                  {/* Left Side (65%): Text & Button aligned perfectly like the image */}
-                  <View style={styles.cardLeft}>
-                    <Text style={styles.subjectTitle} numberOfLines={2}>
-                      {module.title}
-                    </Text>
-                    <Text style={styles.subjectSubtitle} numberOfLines={1}>
-                      {module.subtitle}
-                    </Text>
-
-                    <TouchableOpacity 
-                      style={[styles.cardButton, module.progress === 0 ? styles.startButton : styles.continueButton]}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.cardButtonText, module.progress === 0 ? styles.startButtonText : styles.continueButtonText]}>
-                        {module.progress === 0 ? 'Start Task' : 'View Task'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Right Side (35%): Circular Progress */}
-                  <View style={styles.cardRight}>
-                    <View style={[
-                      styles.circularProgress, 
-                      { 
-                        // Muted dark teal for 0%, vibrant yellow/orange for active progress
-                        borderColor: module.progress === 0 ? '#000000' : '#fbfbfb',
-                      }
-                    ]}>
-                      <Text style={[styles.circularProgressText, { opacity: module.progress === 0 ? 0.5 : 1 }]}>
-                        {module.progress}%
-                      </Text>
-                    </View>
-                  </View>
-
-                </View>
+          <View style={styles.notificationsContainer}>
+            <TouchableOpacity style={styles.notificationCard} activeOpacity={0.7}>
+              <View style={styles.notificationTextWrapper}>
+                <Text style={styles.notificationTitle}>New Module Available</Text>
+                <Text style={styles.notificationMessage}>The ALS Coordinator has unlocked a new Cookery lesson.</Text>
+                <Text style={styles.notificationTime}>2 hours ago</Text>
               </View>
-            ))}
-          </ScrollView>
-        </View>
+              <Ionicons name="chevron-forward" size={24} color="#2e64e5" />
+            </TouchableOpacity>
 
-        {/* 🟠 Recent Updates / Notifications Area */}
-        <View style={styles.notificationsContainer}>
-          <Text style={styles.sectionTitle}>Recent Updates</Text>
+            <TouchableOpacity style={styles.notificationCard} activeOpacity={0.7}>
+              <View style={styles.notificationTextWrapper}>
+                <Text style={styles.notificationTitle}>AI Insight</Text>
+                <Text style={styles.notificationMessage}>You are showing 85% mastery! Ready for a quick evaluation?</Text>
+                <Text style={styles.notificationTime}>Yesterday</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color="#2e64e5" />
+            </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity style={styles.notificationCard} activeOpacity={0.7}>
-            <View style={styles.notificationTextWrapper}>
-              <Text style={styles.notificationTitle}>New Module Available</Text>
-              <Text style={styles.notificationMessage}>The ALS Coordinator has unlocked a new Cookery lesson.</Text>
-              <Text style={styles.notificationTime}>2 hours ago</Text>
-            </View>
-          </TouchableOpacity>
+        </ScrollView>
+      </View>
 
-          <TouchableOpacity style={styles.notificationCard} activeOpacity={0.7}>
-            <View style={styles.notificationTextWrapper}>
-              <Text style={styles.notificationTitle}>AI Insight</Text>
-              <Text style={styles.notificationMessage}>You are showing 85% mastery! Ready for a quick evaluation?</Text>
-              <Text style={styles.notificationTime}>Yesterday</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-      </ScrollView>
-
-      {/* 🟠 Bottom Navigation Bar */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIconActive}>🏠</Text>
+        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
+          <Ionicons name="home" size={24} color="#ffffff" style={styles.iconMargin} />
           <Text style={styles.navTextActive}>Home</Text>
         </TouchableOpacity>
         
@@ -202,17 +263,17 @@ export default function DashboardScreen() {
           style={styles.navItem} 
           onPress={() => router.push('/learn' as any)}
         >
-          <Text style={styles.navIcon}>📚</Text>
+          <Ionicons name="book-outline" size={24} color="#888888" style={styles.iconMargin} />
           <Text style={styles.navText}>Learn</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>📊</Text>
+          <Ionicons name="bar-chart-outline" size={24} color="#888888" style={styles.iconMargin} />
           <Text style={styles.navText}>Stats</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('/profile' as any)}>
-          <Text style={styles.navIcon}>👤</Text>
+          <Ionicons name="person-outline" size={24} color="#888888" style={styles.iconMargin} />
           <Text style={styles.navText}>Profile</Text>
         </TouchableOpacity>
       </View>
@@ -222,24 +283,83 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  UpperColor: {color: '#c76e60'}
-  safeArea: { flex: 1, backgroundColor: '#fcfaf8' },
+  safeArea: { flex: 1, backgroundColor: '#2e64e5' }, 
+  mainBackground: { flex: 1, backgroundColor: '#fcfaf8' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8' },
-  scrollContent: { paddingBottom: 100 }, 
+  
+  topSection: {
+    backgroundColor: '#2e64e5', 
+    paddingBottom: 20, 
+    borderBottomLeftRadius: 35, 
+    borderBottomRightRadius: 35,
+    zIndex: 1,
+  },
+  
+  scrollContent: { paddingBottom: 100, paddingTop: 10 }, 
 
-  headerBar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15 },
-  statPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef3ff', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#d0ddff' },
+  // 🟢 CLEANED UP: Removed the duplicate headerBar style
+  headerBar: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    gap: 15, 
+    paddingHorizontal: 20, 
+    paddingTop: 10, 
+    paddingBottom: 25 
+  },
+  
+  statPill: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: '#ffffff', 
+    paddingVertical: 6, 
+    paddingHorizontal: 12, 
+    borderRadius: 20, 
+    borderWidth: 1, 
+    borderColor: '#d0ddff' 
+  },  
+  
   statIcon: { fontSize: 16, marginRight: 5 },
-  statText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
+  statTextXP: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
+  statText: { fontSize: 14, fontWeight: 'bold' },
 
-  welcomeContainer: { paddingHorizontal: 20, marginBottom: 20 },
-  greetingText: { fontSize: 18, color: '#666' },
-  nameText: { fontSize: 28, fontWeight: 'bold', color: '#333' },
+  welcomeContainer: { paddingHorizontal: 20 },
+  greetingText: { fontSize: 18, color: '#e0e8f9' }, 
+  nameText: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' }, 
 
-  challengeCard: { marginHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, padding: 20, borderWidth: 2, borderColor: '#2e64e5', marginBottom: 30, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  sectionHeaderRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'baseline' 
+  },
+  
+  seeAllButton: {
+    paddingRight: 20, 
+    marginBottom: 15, 
+  },
+  
+  seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
+  
+  challengeCard: { 
+    marginHorizontal: 20, 
+    backgroundColor: '#ffffff', 
+    borderRadius: 16, 
+    padding: 20, 
+    borderWidth: 1, 
+    borderColor: '#d0ddff', 
+    marginBottom: 30, 
+    marginTop: 0, // 🟢 RESTORED: Re-added negative top margin so it overlaps the header
+    elevation: 5, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.15, 
+    shadowRadius: 6, 
+    zIndex: 20
+  },
   challengeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   challengeTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
-  timerText: { fontSize: 14, fontWeight: 'bold', color: '#d9534f' },
+  timerText: { fontSize: 14, fontWeight: 'bold', color: '#ffffff' },  
   challengeButton: { backgroundColor: '#2e64e5', padding: 12, borderRadius: 10, alignItems: 'center' },
   challengeButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
 
@@ -247,10 +367,9 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, marginBottom: 15 },
   carouselContent: { paddingHorizontal: 20, gap: 15 },
   
-  // 🟢 INSPO LAYOUT STYLES START HERE 🟢
   subjectCard: { 
-    backgroundColor: '#5480e5', // Deep Teal Background
-    borderRadius: 24,           // Highly rounded corners
+    backgroundColor: '#5480e5', 
+    borderRadius: 24,           
     padding: 20, 
     elevation: 4, 
     shadowColor: '#000', 
@@ -262,34 +381,70 @@ const styles = StyleSheet.create({
   cardLeft: { width: '65%', justifyContent: 'center', paddingRight: 15 },
   cardRight: { width: '35%', alignItems: 'flex-end', justifyContent: 'center' },
   
-  // Card Text
   subjectTitle: { fontSize: 18, fontWeight: 'bold', color: '#ffffff', marginBottom: 6, lineHeight: 24 }, 
-  subjectSubtitle: { fontSize: 13, color: '#a0b9c1', marginBottom: 20 }, // Faded teal-white
+  subjectSubtitle: { fontSize: 13, color: '#a0b9c1', marginBottom: 20 }, 
 
-  // Action Buttons (Moved to the left column under text)
-  cardButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, alignSelf: 'flex-start' }, // Pill shape, wraps text
-  startButton: { backgroundColor: '#fefefe' }, // Muted button for unstarted
-  continueButton: { backgroundColor: '#fefefe' }, // Yellow-orange from inspo image
+  cardButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, alignSelf: 'flex-start' }, 
+  startButton: { backgroundColor: '#fefefe' }, 
+  continueButton: { backgroundColor: '#fefefe' }, 
   cardButtonText: { fontSize: 13, fontWeight: 'bold' },
   startButtonText: { color: '#000000' },
   continueButtonText: { color: '#050505' },
 
-  // Circular Progress (Pure RN, Solid Border)
   circularProgress: { width: 70, height: 70, borderRadius: 35, borderWidth: 6, justifyContent: 'center', alignItems: 'center' },
   circularProgressText: { fontSize: 16, fontWeight: 'bold', color: '#ffffff' },
-  // 🟢 INSPO LAYOUT STYLES END HERE 🟢
 
   notificationsContainer: { paddingHorizontal: 20, paddingBottom: 20 },
-  notificationCard: { backgroundColor: '#ffffff', borderRadius: 12, padding: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#e0d8d0', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
+  notificationCard: { 
+    backgroundColor: '#ffffff', 
+    borderRadius: 12, 
+    paddingVertical: 10,   
+    paddingHorizontal: 15, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 12, 
+    borderWidth: 1, 
+    borderColor: '#e0d8d0', 
+    elevation: 1, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 2 
+  },  
   notificationTextWrapper: { flex: 1 },
   notificationTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 2 },
-  notificationMessage: { fontSize: 14, color: '#666', marginBottom: 6, lineHeight: 20 },
+  notificationMessage: { fontSize: 12, color: '#666', marginBottom: 6, lineHeight: 15 },
   notificationTime: { fontSize: 12, color: '#aaa', fontWeight: '500' },
 
-  bottomNav: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, backgroundColor: '#ffffff', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#e0d8d0', paddingBottom: 15 },
-  navItem: { alignItems: 'center', justifyContent: 'center', flex: 1 },
-  navIcon: { fontSize: 24, color: '#888', marginBottom: 4 },
+  bottomNav: { 
+    position: 'absolute', 
+    bottom: 0, 
+    left: 0, 
+    right: 0, 
+    height: 80, 
+    backgroundColor: '#ffffff', 
+    flexDirection: 'row', 
+    borderTopWidth: 1, 
+    borderTopColor: '#e0d8d0' 
+  },
+  
+  navItem: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingBottom: 15 
+  },
+  
+  navItemActive: { 
+    backgroundColor: '#2e64e5', 
+    borderTopRightRadius: 30, 
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  }, 
+  
+  iconMargin: { marginBottom: 4 }, 
+  
   navText: { fontSize: 12, color: '#888', fontWeight: '500' },
-  navIconActive: { fontSize: 24, color: '#2e64e5', marginBottom: 4 },
-  navTextActive: { fontSize: 12, color: '#2e64e5', fontWeight: 'bold' }
+  navTextActive: { fontSize: 12, color: '#ffffff', fontWeight: 'bold' }
 });

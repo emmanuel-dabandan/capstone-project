@@ -1,152 +1,170 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function LearnScreen() {
   const subjects = [
-    { id: 1, name: 'Cookery & Food Safety', icon: '🍳', color: '#8B5CF6' }, 
-    { id: 2, name: 'Oral Communication', icon: '🗣️', color: '#3B82F6' }, 
-    { id: 3, name: 'General Mathematics', icon: '🧮', color: '#10B981' }, 
-    { id: 4, name: 'Personal Development', icon: '🧠', color: '#F59E0B' }, 
-    { id: 5, name: 'Earth & Life Science', icon: '🌍', color: '#EC4899' }, 
-    { id: 6, name: 'Understanding Culture', icon: '🏛️', color: '#6366F1' }, 
+    { id: 1, name: 'Cookery & Food Safety', icon: 'restaurant', color: '#5480e5' }, 
+    { id: 2, name: 'Oral Communication', icon: 'chatbubbles', color: '#3B82F6' }, 
+    { id: 3, name: 'General Mathematics', icon: 'calculator', color: '#10B981' }, 
+    { id: 4, name: 'Personal Development', icon: 'bulb', color: '#F59E0B' }, 
+    { id: 5, name: 'Earth & Life Science', icon: 'earth', color: '#EC4899' }, 
+    { id: 6, name: 'Understanding Culture', icon: 'library', color: '#6366F1' }, 
   ];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <View style={styles.mainBackground}>
         
-        <Text style={styles.screenTitle}>Learn</Text>
-
-        {/* 🟠 1. AI Recommended Focus */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>✨ AI Recommended</Text>
-          <Text style={styles.sectionSubtitle}>Targeted review based on your latest assessment</Text>
-          
-          <TouchableOpacity style={styles.aiCard} activeOpacity={0.8}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Kitchen Tools & Equipment</Text>
-              <Text style={styles.cardSubtitle}>7 concepts to review • 10 Mins</Text>
-            </View>
-            <View style={styles.aiButton}>
-              <Text style={styles.aiButtonText}>Review</Text>
-            </View>
-          </TouchableOpacity>
+        
+        {/* 🟠 TOP SECTION (Blue Background, Curved Bottom) */}
+        <View style={styles.topSection}>
+          <Text style={styles.screenTitle}>Learn</Text>
         </View>
 
-        {/* 🟠 2. Subjects Horizontal Scroll (UPDATED DESIGN) */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Subjects</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
-          </View>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {subjects.map((subject) => (
-              <TouchableOpacity key={subject.id} style={styles.subjectCardWide} activeOpacity={0.8}>
-                <View style={[styles.largeIconContainer, { backgroundColor: subject.color }]}>
-                  <Text style={styles.largeIconText}>{subject.icon}</Text>
+          {/* 🟠 1. AI Recommended Focus (Floats over the curve) */}
+          <View style={styles.aiCardContainer}>
+            <Text style={styles.sectionSubtitleWhite}>Targeted review based on your latest assessment</Text>
+            
+            <TouchableOpacity style={styles.aiCard} activeOpacity={0.8}>
+              <View style={{ flex: 1 }}>
+                <View style={styles.aiHeaderRow}>
+                  <Ionicons name="sparkles" size={16} color="#ffc107" style={{ marginRight: 6 }} />
+                  <Text style={styles.aiBadgeText}>AI Recommended</Text>
                 </View>
-                <Text style={styles.subjectCardTitle} numberOfLines={2}>{subject.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* 🟠 5. Pending Quizzes */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Quizzes</Text>
-          <Text style={styles.sectionSubtitle}>Check in on your pending evaluations</Text>
-          
-          <TouchableOpacity style={styles.actionCard} activeOpacity={0.8}>
-            <View>
-              <Text style={styles.cardTitle}>Module 1 Assessment</Text>
-              <Text style={styles.cardSubtitle}>Cookery & Food Safety • 15 Mins</Text>
-            </View>
-            <View style={styles.startButton}>
-              <Text style={styles.startButtonText}>Start</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* 🟠 3. Study Tools & Library */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>My Library & Tools</Text>
-          
-          <View style={styles.toolsGrid}>
-            <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
-              <Text style={styles.toolIcon}>📇</Text>
-              <Text style={styles.toolText}>Flashcards</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
-              <Text style={styles.toolIcon}>🎯</Text>
-              <Text style={styles.toolText}>Practice</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
-              <Text style={styles.toolIcon}>⭐</Text>
-              <Text style={styles.toolText}>Saved</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
-              <Text style={styles.toolIcon}>🎒</Text>
-              <Text style={styles.toolText}>Downloads</Text>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>3</Text>
+                <Text style={styles.cardTitle}>Kitchen Tools & Equipment</Text>
+                <Text style={styles.cardSubtitle}>7 concepts to review • 10 Mins</Text>
+              </View>
+              <View style={styles.aiButton}>
+                <Text style={styles.aiButtonText}>Review</Text>
               </View>
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* 🟠 4. Quick References / Cheat Sheets */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Quick References</Text>
-          <Text style={styles.sectionSubtitle}>Hands-on guides for practical application</Text>
-          
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
-              <Text style={styles.referenceIcon}>🌡️</Text>
-              <Text style={styles.referenceText}>Safe Cooking Temps</Text>
+          {/* 🟠 2. Subjects Horizontal Scroll */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Subjects</Text>
+              <TouchableOpacity activeOpacity={0.7} style={styles.seeAllButton}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+              {subjects.map((subject) => (
+                <TouchableOpacity key={subject.id} style={styles.subjectCardWide} activeOpacity={0.8}>
+                  <View style={[styles.largeIconContainer, { backgroundColor: subject.color + '15' }]}>
+                    <Ionicons name={subject.icon as any} size={40} color={subject.color} />
+                  </View>
+                  <Text style={styles.subjectCardTitle} numberOfLines={2}>{subject.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* 🟠 3. Pending Quizzes */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitlePad}>Quizzes</Text>
+            <Text style={styles.sectionSubtitlePad}>Check in on your pending evaluations</Text>
+            
+            <TouchableOpacity style={styles.actionCard} activeOpacity={0.8}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Module 1 Assessment</Text>
+                <Text style={styles.cardSubtitle}>Cookery & Food Safety • 15 Mins</Text>
+              </View>
+              <View style={styles.startButton}>
+                <Text style={styles.startButtonText}>Start</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color="#bbbbbb" style={{ marginLeft: 10 }} />
             </TouchableOpacity>
+          </View>
 
-            <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
-              <Text style={styles.referenceIcon}>⚖️</Text>
-              <Text style={styles.referenceText}>Measurement Conversions</Text>
-            </TouchableOpacity>
+          {/* 🟠 4. Study Tools & Library */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitlePad}>My Library & Tools</Text>
+            
+            <View style={styles.toolsGrid}>
+              <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
+                <Ionicons name="albums-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
+                <Text style={styles.toolText}>Flashcards</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
-              <Text style={styles.referenceIcon}>🔪</Text>
-              <Text style={styles.referenceText}>Knife Cuts Guide</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
+              <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
+                <Ionicons name="fitness-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
+                <Text style={styles.toolText}>Practice</Text>
+              </TouchableOpacity>
 
-        
+              <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
+                <Ionicons name="star-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
+                <Text style={styles.toolText}>Saved</Text>
+              </TouchableOpacity>
 
-      </ScrollView>
+              <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
+                <Ionicons name="download-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
+                <Text style={styles.toolText}>Downloads</Text>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>3</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-      {/* 🟠 Bottom Navigation */}
+          {/* 🟠 5. Quick References */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitlePad}>Quick References</Text>
+            <Text style={styles.sectionSubtitlePad}>Hands-on guides for practical application</Text>
+            
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+              <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
+                <View style={styles.referenceIconWrapper}>
+                  <Ionicons name="thermometer-outline" size={24} color="#e65100" />
+                </View>
+                <Text style={styles.referenceText}>Safe Cooking Temps</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
+                <View style={styles.referenceIconWrapper}>
+                  <Ionicons name="scale-outline" size={24} color="#3B82F6" />
+                </View>
+                <Text style={styles.referenceText}>Measurement Conversions</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
+                <View style={styles.referenceIconWrapper}>
+                  <Ionicons name="cut-outline" size={24} color="#10B981" />
+                </View>
+                <Text style={styles.referenceText}>Knife Cuts Guide</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+
+        </ScrollView>
+      </View>
+
+      {/* 🟠 Bottom Navigation Bar */}
       <View style={styles.bottomNav}>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('/dashboard' as any)}>
-          <Text style={styles.navIcon}>🏠</Text>
+          <Ionicons name="home-outline" size={24} color="#888888" style={styles.iconMargin} />
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIconActive}>📚</Text>
+        {/* Active Tab (Pill styling for middle tabs) */}
+        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
+          <Ionicons name="book" size={24} color="#ffffff" style={styles.iconMargin} />
           <Text style={styles.navTextActive}>Learn</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>📊</Text>
+          <Ionicons name="bar-chart-outline" size={24} color="#888888" style={styles.iconMargin} />
           <Text style={styles.navText}>Stats</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('/profile' as any)}>
-          <Text style={styles.navIcon}>👤</Text>
+          <Ionicons name="person-outline" size={24} color="#888888" style={styles.iconMargin} />
           <Text style={styles.navText}>Profile</Text>
         </TouchableOpacity>
       </View>
@@ -155,54 +173,168 @@ export default function LearnScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0A0F1C' }, 
-  scrollContent: { padding: 20, paddingBottom: 100 },
-
-  screenTitle: { fontSize: 34, fontWeight: 'bold', color: '#ffffff', marginBottom: 30, marginTop: 10 },
+  safeArea: { flex: 1, backgroundColor: '#2e64e5' }, 
+  mainBackground: { flex: 1, backgroundColor: '#fcfaf8' },
+  
+  topSection: {
+    backgroundColor: '#2e64e5', 
+    paddingBottom: 40, 
+    borderBottomLeftRadius: 35, 
+    borderBottomRightRadius: 35,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    zIndex: 1,
+  },
+  
+  screenTitle: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' },
+  
+  scrollContent: { paddingBottom: 100, paddingTop: 10 },
 
   sectionContainer: { marginBottom: 35 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#ffffff' },
-  sectionSubtitle: { fontSize: 14, color: '#8A99B5', marginTop: 4, marginBottom: 15 },
-  seeAllText: { fontSize: 14, fontWeight: '600', color: '#ffffff', textDecorationLine: 'underline' },
-  horizontalScroll: { gap: 15, paddingRight: 20 }, // Shared gap for all horizontal scrolls
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, marginBottom: 15 },
+  sectionTitlePad: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20 },
+  sectionSubtitlePad: { fontSize: 13, color: '#888', paddingHorizontal: 20, marginTop: 4, marginBottom: 15 },
+  sectionSubtitleWhite: { fontSize: 13, color: '#e0e8f9', paddingHorizontal: 20, marginBottom: 10, marginTop: -35, zIndex: 10 },
+  
+  seeAllButton: { paddingRight: 20, marginBottom: 15 },
+  seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
+  horizontalScroll: { gap: 15, paddingHorizontal: 20 }, 
 
-  // --- AI Recommendation Card ---
-  aiCard: { backgroundColor: '#161D2F', borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#10B981' },
-  aiButton: { backgroundColor: '#10B981', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 10 },
+  // --- AI Recommendation Card (Floats over header) ---
+  aiCardContainer: { marginBottom: 30 },
+  aiCard: { 
+    marginHorizontal: 20, 
+    backgroundColor: '#ffffff', 
+    borderRadius: 16, 
+    padding: 20, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#d0ddff', 
+    elevation: 5, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.15, 
+    shadowRadius: 6, 
+    zIndex: 20,
+    marginTop: 20,
+  },
+  aiHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  aiBadgeText: { fontSize: 12, fontWeight: 'bold', color: '#ffc107', textTransform: 'uppercase' },
+  aiButton: { backgroundColor: '#2e64e5', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10 },
   aiButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
 
-  // --- NEW: Subjects Horizontal Wide Cards ---
-  subjectCardWide: { width: 150, backgroundColor: '#161D2F', borderRadius: 16, padding: 12 },
-  largeIconContainer: { width: '100%', height: 120, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-  largeIconText: { fontSize: 48 },
-  subjectCardTitle: { fontSize: 15, fontWeight: 'bold', color: '#ffffff', lineHeight: 22 },
+  // --- Subjects Horizontal Wide Cards ---
+  subjectCardWide: { 
+    width: 140, 
+    backgroundColor: '#ffffff', 
+    borderRadius: 16, 
+    padding: 12, 
+    borderWidth: 1, 
+    borderColor: '#e0d8d0',
+    elevation: 2, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 4 
+  },
+  largeIconContainer: { width: '100%', height: 90, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  subjectCardTitle: { fontSize: 14, fontWeight: 'bold', color: '#333', lineHeight: 20, textAlign: 'center' },
 
   // --- Tools & Library Grid ---
-  toolsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12 },
-  toolCard: { width: '48%', backgroundColor: '#161D2F', borderRadius: 16, paddingVertical: 18, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  toolIcon: { fontSize: 18, marginRight: 10 },
-  toolText: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
-  badge: { position: 'absolute', top: -5, right: -5, backgroundColor: '#EF4444', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
-  badgeText: { color: '#ffffff', fontSize: 12, fontWeight: 'bold' },
+  toolsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20 },
+  toolCard: { 
+    width: '48%', 
+    backgroundColor: '#ffffff', 
+    borderRadius: 16, 
+    paddingVertical: 18, 
+    paddingHorizontal: 15, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    borderWidth: 1, 
+    borderColor: '#e0d8d0',
+    elevation: 1, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 2 
+  },
+  toolIcon: { marginRight: 8 },
+  toolText: { fontSize: 14, fontWeight: '600', color: '#333' },
+  badge: { position: 'absolute', top: -6, right: -6, backgroundColor: '#e65100', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#ffffff' },
+  badgeText: { color: '#ffffff', fontSize: 10, fontWeight: 'bold' },
 
   // --- Quick References Scroll ---
-  referenceCard: { backgroundColor: '#161D2F', borderRadius: 12, padding: 15, flexDirection: 'row', alignItems: 'center', width: 200 },
-  referenceIcon: { fontSize: 24, marginRight: 10 },
-  referenceText: { fontSize: 14, fontWeight: '600', color: '#ffffff', flex: 1, flexWrap: 'wrap' },
+  referenceCard: { 
+    backgroundColor: '#ffffff', 
+    borderRadius: 12, 
+    padding: 12, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    width: 220,
+    borderWidth: 1, 
+    borderColor: '#e0d8d0',
+    elevation: 1, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 2 
+  },
+  referenceIconWrapper: { backgroundColor: '#f5f7fa', padding: 8, borderRadius: 8, marginRight: 12 },
+  referenceText: { fontSize: 14, fontWeight: '600', color: '#333', flex: 1, flexWrap: 'wrap' },
 
   // --- Action Cards (Quizzes) ---
-  actionCard: { backgroundColor: '#161D2F', borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
-  cardSubtitle: { fontSize: 13, color: '#8A99B5' },
-  startButton: { backgroundColor: '#3B82F6', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 10 },
+  actionCard: { 
+    marginHorizontal: 20,
+    backgroundColor: '#ffffff', 
+    borderRadius: 16, 
+    padding: 18, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    borderWidth: 1, 
+    borderColor: '#e0d8d0',
+    elevation: 1, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 2 
+  },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 4 },
+  cardSubtitle: { fontSize: 13, color: '#888' },
+  startButton: { backgroundColor: '#2e64e5', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 10 },
   startButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
 
-  // --- Dark Mode Bottom Navigation ---
-  bottomNav: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 85, backgroundColor: '#101625', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#1c2438', paddingBottom: 20 },
-  navItem: { alignItems: 'center', justifyContent: 'center', flex: 1 },
-  navIcon: { fontSize: 22, color: '#6A7A9C', marginBottom: 4 },
-  navText: { fontSize: 12, color: '#6A7A9C', fontWeight: '500' },
-  navIconActive: { fontSize: 22, color: '#10B981', marginBottom: 4 },
-  navTextActive: { fontSize: 12, color: '#10B981', fontWeight: 'bold' }
+  // --- Bottom Navigation ---
+  bottomNav: { 
+    position: 'absolute', 
+    bottom: 0, 
+    left: 0, 
+    right: 0, 
+    height: 80, 
+    backgroundColor: '#ffffff', 
+    flexDirection: 'row', 
+    borderTopWidth: 1, 
+    borderTopColor: '#e0d8d0' 
+  },
+  navItem: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingBottom: 15 
+  },
+  navItemActive: { 
+    backgroundColor: '#2e64e5', 
+    borderRadius: 20, 
+    marginHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 20,
+    paddingVertical: 6
+  }, 
+  iconMargin: { marginBottom: 4 }, 
+  navText: { fontSize: 12, color: '#888', fontWeight: '500' },
+  navTextActive: { fontSize: 12, color: '#ffffff', fontWeight: 'bold' }
 });
