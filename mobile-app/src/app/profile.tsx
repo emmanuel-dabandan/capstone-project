@@ -166,9 +166,9 @@ const styles = StyleSheet.create({
   scrollContainer: { padding: 20, paddingBottom: 50 },
 
   // Header Styles
-  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 70, paddingBottom: 20, paddingHorizontal: 20 },
+  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 20, paddingBottom: 20, paddingHorizontal: 20 },
   backButton: { position: 'absolute', left: 20, top: 15, padding: 5, justifyContent: 'center', alignItems: 'center', paddingTop: 50 },
-  backIconText: { fontSize: 32, fontWeight: 'bold', color: '#2e64e5', marginTop: -10 },
+  backIconText: { fontSize: 32, fontWeight: 'bold', color: '#fefefe', marginTop: -65 },
   headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#333' },
 
   // Tab 1: Profile Overview

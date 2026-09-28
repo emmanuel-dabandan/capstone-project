@@ -1,24 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ImageBackground, Image, ScrollView, Button, Animated } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ImageBackground, ScrollView, Animated } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
 // 🟠 CUSTOM ANIMATION WRAPPER
-// This makes any child element slide up and fade in when it renders
 const SlideUpView = ({ children, style }: { children: React.ReactNode, style?: any }) => {
-  const slideAnim = useRef(new Animated.Value(40)).current; // Starts 40px down
-  const fadeAnim = useRef(new Animated.Value(0)).current;   // Starts invisible
+  const slideAnim = useRef(new Animated.Value(40)).current; 
+  const fadeAnim = useRef(new Animated.Value(0)).current;   
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 400, // 400ms slide
+        duration: 400, 
         useNativeDriver: true,
       }),
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400, // 400ms fade
+        duration: 400, 
         useNativeDriver: true,
       })
     ]).start();
@@ -51,6 +50,8 @@ export default function AuthScreen() {
   const [otpCode, setOtpCode] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
+  const CODE_LENGTH = 8;
+
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert("Missing Information", "Please enter both your email and password.");
@@ -60,7 +61,7 @@ export default function AuthScreen() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      router.replace('/dashboard' as any);
+      router.replace('/home' as any);
     } catch (error: any) {
       Alert.alert("Login Failed", "Invalid email or password. Please try again.");
     } finally {
@@ -82,17 +83,24 @@ export default function AuthScreen() {
     if (isEnrolled && !lrn.trim()) return Alert.alert("Missing Info", "Please enter your 12-digit LRN.");
     if (!strand) return Alert.alert("Missing Info", "Please select a learning strand.");
 
+    setIsLoading(true); 
+
     try {
       const { error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) throw authError;
       setAuthStep(2); 
     } catch (error: any) {
       Alert.alert("Sign Up Failed", error.message);
+    } finally {
+      setIsLoading(false); 
     }
   };
 
   const handleVerifyCode = async () => {
-    if (!otpCode) return Alert.alert("Missing Code", "Please enter the 8-digit code.");
+    if (otpCode.length !== CODE_LENGTH) return Alert.alert("Missing Code", "Please enter the full 8-digit code.");
+    
+    setIsLoading(true); 
+
     try {
       const { data, error } = await supabase.auth.verifyOtp({ email, token: otpCode, type: 'signup' });
       if (error) throw error;
@@ -114,6 +122,8 @@ export default function AuthScreen() {
       setConfirmPassword('');
     } catch (error: any) {
       Alert.alert("Verification Failed", "Incorrect code or it has expired.");
+    } finally {
+      setIsLoading(false); 
     }
   };
 
@@ -130,16 +140,14 @@ export default function AuthScreen() {
       =========================================== */}
       {activeView === 'welcome' && (
         <SlideUpView style={styles.welcomeContainer}>
-          <View style={styles.logoContainer}>
-            
-          </View>
+          <View style={styles.logoContainer}></View>
 
           <View style={styles.buttonContainer}>
-            <TouchableOpacity style={styles.welcomeLoginBtn} activeOpacity={0.5} onPress={() => setActiveView('login')}>
+            <TouchableOpacity style={styles.welcomeLoginBtn} activeOpacity={0.8} onPress={() => setActiveView('login')}>
               <Text style={styles.welcomeLoginText}>Login</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.welcomeSignupBtn} activeOpacity={0.5} onPress={() => setActiveView('signup')}>
+            <TouchableOpacity style={styles.welcomeSignupBtn} activeOpacity={0.8} onPress={() => setActiveView('signup')}>
               <Text style={styles.welcomeSignupText}>Sign Up</Text>
             </TouchableOpacity>
           </View>
@@ -193,12 +201,16 @@ export default function AuthScreen() {
       =========================================== */}
       {activeView === 'signup' && (
         <SlideUpView style={styles.signupContainer}>
-          <View style={styles.headerBar}>
-            <TouchableOpacity onPress={() => setActiveView('welcome')} style={styles.backButton}>
-              <Text style={styles.backIconText}>←</Text>
-            </TouchableOpacity>
-            <Text style={styles.loginHeaderTitle}>Sign Up</Text>
-          </View>
+          
+          {/* 🟢 STEP 1 HEADER: Hides completely when on Step 2 */}
+          {authStep === 1 && (
+            <View style={styles.headerBar}>
+              <TouchableOpacity onPress={() => setActiveView('welcome')} style={styles.backButton}>
+                <Text style={styles.backIconText}>←</Text>
+              </TouchableOpacity>
+              <Text style={styles.loginHeaderTitle}>Sign Up</Text>
+            </View>
+          )}
 
           {authStep === 1 && (
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -282,26 +294,71 @@ export default function AuthScreen() {
             </ScrollView>
           )}
 
+          {/* 🟢 STEP 2: Centered 8-Box OTP Layout */}
           {authStep === 2 && (
-            <View style={styles.cardStepContainer}>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Check your email!</Text>
-                <Text style={styles.signupSubText}>We sent an 8-digit verification code to {email}.</Text>
+            <View style={styles.otpMainContainer}>
+              <View style={styles.otpCard}>
                 
-                <TextInput style={styles.otpInput} placeholder="12345678" value={otpCode} onChangeText={setOtpCode} keyboardType="number-pad" maxLength={8} />
-                
-                <View style={styles.buttonGap}>
-                  <Button title="Verify & Complete Sign Up" onPress={handleVerifyCode} color="#2e64e5" />
-                  <Button title="← Back to Edit Email" onPress={() => setAuthStep(1)} color="#6c757d" />
+                <Text style={styles.cardTitle}>Check your email!</Text>
+                <Text style={styles.cardSubtitle}>
+                  We sent an 8-digit verification code to {email}.
+                </Text>
+
+                <View style={styles.otpContainer}>
+                  {Array(CODE_LENGTH).fill(0).map((_, index) => {
+                    const isActive = otpCode.length === index;
+                    return (
+                      <View key={index} style={[styles.otpBox, isActive && styles.otpBoxActive]}>
+                        <Text style={styles.otpText}>{otpCode[index] || ''}</Text>
+                      </View>
+                    );
+                  })}
+                  
+                  {/* Bulletproof Invisible Input */}
+                  <TextInput
+                    value={otpCode}
+                    onChangeText={(text) => {
+                      const numericValue = text.replace(/[^0-9]/g, '');
+                      setOtpCode(numericValue.substring(0, CODE_LENGTH));
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={CODE_LENGTH}
+                    autoFocus={true}
+                    style={styles.hiddenInputOverlay}
+                    caretHidden={true}
+                  />
                 </View>
+
+                <TouchableOpacity 
+                  style={[styles.verifyButton, isLoading && { opacity: 0.5 }]} 
+                  activeOpacity={0.8} 
+                  onPress={handleVerifyCode}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.verifyButtonText}>
+                    {isLoading ? "Verifying..." : "Verify & Complete Sign Up"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.backToEmailButton} activeOpacity={0.6} onPress={() => setAuthStep(1)}>
+                  <Text style={styles.backToEmailText}>← Back to Edit Email</Text>
+                </TouchableOpacity>
+
               </View>
             </View>
           )}
 
           {authStep === 1 && (
             <View style={styles.footerButtonContainer}>
-              <TouchableOpacity style={styles.footerButton} onPress={handleSignUpAndSendOTP} activeOpacity={0.8}>
-                <Text style={styles.footerButtonText}>Sign Up</Text>
+              <TouchableOpacity 
+                style={[styles.footerButton, isLoading && styles.authLoginBtnDisabled]} 
+                onPress={handleSignUpAndSendOTP} 
+                activeOpacity={0.8}
+                disabled={isLoading}
+              >
+                <Text style={styles.footerButtonText}>
+                  {isLoading ? "Sending Code..." : "Sign Up"}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -320,9 +377,6 @@ const styles = StyleSheet.create({
   signupContainer: { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.70)' },
 
   logoContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  logoImage: { width: 120, height: 120, marginBottom: 15 },
-  logoPlaceholder: { fontSize: 42, fontWeight: '900', color: '#2e64e5', letterSpacing: 2 },
-  welcomeSubText: { fontSize: 16, color: '#666', marginTop: 10, fontWeight: '500' },
   buttonContainer: { marginBottom: 40, gap: 15 },
   welcomeLoginBtn: { backgroundColor: '#2e64e5', paddingVertical: 15, borderRadius: 10, alignItems: 'center' },
   welcomeLoginText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
@@ -344,7 +398,6 @@ const styles = StyleSheet.create({
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 60, paddingHorizontal: 20, marginBottom: 10 },
   backButton: { position: 'absolute', left: 20, paddingTop: 60 },
   backIconText: { fontSize: 32, fontWeight: 'bold', color: '#2e64e5', marginTop: -10 },
-  signupHeaderTitle: { fontSize: 24, fontWeight: 'bold', color: '#333' },
   formContainer: { flex: 1, paddingHorizontal: 25 },
   inputErrorBorder: { borderBottomColor: '#d9534f', borderBottomWidth: 2 },
   helperText: { fontSize: 12, color: '#000000', marginTop: 4, marginBottom: 5, lineHeight: 16 },
@@ -371,13 +424,96 @@ const styles = StyleSheet.create({
   dropdownItemText: { fontSize: 15, color: '#333' },
   dropdownDivider: { height: 1, backgroundColor: '#eee' },
 
-  cardStepContainer: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 40 },
-  card: { backgroundColor: '#ffffff', padding: 25, borderRadius: 15, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5 },
-  cardLabel: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 15, textAlign: 'center' },
-  signupSubText: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 20 },
-  buttonGap: { gap: 15 },
-  otpInput: { backgroundColor: '#f9f9f9', borderWidth: 1, borderColor: '#ddd', padding: 15, borderRadius: 8, fontSize: 28, letterSpacing: 5, textAlign: 'center', color: '#333', marginBottom: 25 },
   footerButtonContainer: { position: 'absolute', bottom: 30, left: 20, right: 20 },
   footerButton: { backgroundColor: '#2e64e5', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 15 }, 
-  footerButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' }
+  footerButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+
+  // --- 🟢 NEW: OTP Verification Step Styles ---
+  otpMainContainer: {
+    flex: 1,
+    justifyContent: 'center', 
+    alignItems: 'center',     
+    paddingHorizontal: 20,
+  },
+  otpCard: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 10,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: '#555',
+    textAlign: 'center',
+    marginBottom: 25,
+    lineHeight: 20,
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 25,
+    position: 'relative', 
+  },
+  otpBox: {
+    width: 30, 
+    height: 42, 
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+  },
+  otpBoxActive: {
+    borderColor: '#2e64e5', 
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+  },
+  otpText: {
+    fontSize: 16, 
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  hiddenInputOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0,
+    zIndex: 99, 
+  },
+  verifyButton: {
+    width: '100%',
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  verifyButtonText: {
+    color: '#2e64e5',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  backToEmailButton: {
+    paddingVertical: 10,
+  },
+  backToEmailText: {
+    color: '#666',
+    fontSize: 14,
+  }
 });
+

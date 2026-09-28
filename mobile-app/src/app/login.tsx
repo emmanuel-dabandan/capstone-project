@@ -25,7 +25,7 @@ export default function LoginScreen() {
       });
 
       if (error) throw error;
-      router.replace('/dashboard' as any);
+      router.replace('/home' as any);
 
     } catch (error: any) {
       Alert.alert("Login Failed", "Invalid email or password. Please try again.");

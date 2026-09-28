@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, FlatList } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
+import { FlatList } from 'react-native-gesture-handler';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
@@ -128,6 +129,8 @@ export default function DashboardScreen() {
     );
   }
 
+  const SPACER_WIDTH = (Dimensions.get('window').width - CARD_WIDTH) / 2 - 7.5;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       
@@ -146,7 +149,7 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.welcomeContainer}>
-            <Text style={styles.greetingText}>Ready to learn,</Text>
+            <Text style={styles.greetingText}>Welcome,</Text>
             <Text style={styles.nameText}>{firstName}?</Text>
           </View>
 
@@ -169,23 +172,27 @@ export default function DashboardScreen() {
             <Text style={styles.sectionTitle}>Your Learning Path</Text>
             
             <FlatList 
-              horizontal 
-              showsHorizontalScrollIndicator={false} 
-              snapToInterval={CARD_WIDTH + 15}
-              decelerationRate="fast"
-              contentContainerStyle={styles.carouselContent}
-              data={infiniteModules}
-              
-              // 🟢 Tell FlatList to use our new guaranteed unique ID
-              keyExtractor={(item) => item.uniqueId}
-              
-              initialScrollIndex={learningModules.length * 50} 
-              
-              getItemLayout={(data, index) => ({
-                length: CARD_WIDTH + 15,
-                offset: (CARD_WIDTH + 15) * index,
-                index,
-              })}
+                // 🟢 ADD THIS LINE: Physically slides Android 15 pixels to the left, iOS stays at 0
+                style={{ transform: [{ translateX: Platform.OS === 'android' ? -15 : 0 }] }} 
+                
+                horizontal={true}
+                nestedScrollEnabled={true} 
+                showsHorizontalScrollIndicator={false} 
+                snapToInterval={CARD_WIDTH + 15}
+                snapToAlignment="center"
+                decelerationRate="fast"
+                contentContainerStyle={styles.carouselContent}
+                data={infiniteModules}
+                keyExtractor={(item) => item.uniqueId}
+                initialScrollIndex={learningModules.length * 50} 
+                getItemLayout={(data, index) => ({
+                  length: CARD_WIDTH + 15,
+                  offset: (CARD_WIDTH + 15) * index,
+                  index,
+                })}
+
+                ListHeaderComponent={Platform.OS === 'android' ? <View style={{ width: SPACER_WIDTH }} /> : null}
+                ListFooterComponent={Platform.OS === 'android' ? <View style={{ width: SPACER_WIDTH }} /> : null}
 
               renderItem={({ item: module }) => (
                 // 🟢 Ensure there is NO key property on this View!
@@ -253,30 +260,7 @@ export default function DashboardScreen() {
         </ScrollView>
       </View>
 
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
-          <Ionicons name="home" size={24} color="#ffffff" style={styles.iconMargin} />
-          <Text style={styles.navTextActive}>Home</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem} 
-          onPress={() => router.push('/learn' as any)}
-        >
-          <Ionicons name="book-outline" size={24} color="#888888" style={styles.iconMargin} />
-          <Text style={styles.navText}>Learn</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="bar-chart-outline" size={24} color="#888888" style={styles.iconMargin} />
-          <Text style={styles.navText}>Stats</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/profile' as any)}>
-          <Ionicons name="person-outline" size={24} color="#888888" style={styles.iconMargin} />
-          <Text style={styles.navText}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      
 
     </SafeAreaView>
   );
@@ -365,9 +349,15 @@ const styles = StyleSheet.create({
 
   carouselContainer: { paddingBottom: 20 },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, marginBottom: 15 },
-  carouselContent: { paddingHorizontal: 20, gap: 15 },
+  carouselContent: {
+    alignItems: 'center',
+    // 🟢 iOS is left blank (undefined), Android uses 0 because it relies on the invisible spacers
+    paddingHorizontal: Platform.OS === 'ios' ? undefined : 0, 
+  },
   
   subjectCard: { 
+    width: CARD_WIDTH,
+    marginHorizontal: 7.5,
     backgroundColor: '#5480e5', 
     borderRadius: 24,           
     padding: 20, 

@@ -145,29 +145,7 @@ export default function LearnScreen() {
         </ScrollView>
       </View>
 
-      {/* 🟠 Bottom Navigation Bar */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/dashboard' as any)}>
-          <Ionicons name="home-outline" size={24} color="#888888" style={styles.iconMargin} />
-          <Text style={styles.navText}>Home</Text>
-        </TouchableOpacity>
-        
-        {/* Active Tab (Pill styling for middle tabs) */}
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
-          <Ionicons name="book" size={24} color="#ffffff" style={styles.iconMargin} />
-          <Text style={styles.navTextActive}>Learn</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="bar-chart-outline" size={24} color="#888888" style={styles.iconMargin} />
-          <Text style={styles.navText}>Stats</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/profile' as any)}>
-          <Ionicons name="person-outline" size={24} color="#888888" style={styles.iconMargin} />
-          <Text style={styles.navText}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      
     </SafeAreaView>
   );
 }
@@ -178,12 +156,13 @@ const styles = StyleSheet.create({
   
   topSection: {
     backgroundColor: '#2e64e5', 
-    paddingBottom: 40, 
+    paddingBottom: 20, 
     borderBottomLeftRadius: 35, 
     borderBottomRightRadius: 35,
     paddingHorizontal: 20,
     paddingTop: 10,
     zIndex: 1,
+    alignItems: 'center',
   },
   
   screenTitle: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' },
@@ -309,32 +288,5 @@ const styles = StyleSheet.create({
   startButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
 
   // --- Bottom Navigation ---
-  bottomNav: { 
-    position: 'absolute', 
-    bottom: 0, 
-    left: 0, 
-    right: 0, 
-    height: 80, 
-    backgroundColor: '#ffffff', 
-    flexDirection: 'row', 
-    borderTopWidth: 1, 
-    borderTopColor: '#e0d8d0' 
-  },
-  navItem: { 
-    flex: 1, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    paddingBottom: 15 
-  },
-  navItemActive: { 
-    backgroundColor: '#2e64e5', 
-    borderRadius: 20, 
-    marginHorizontal: 10,
-    marginTop: 8,
-    marginBottom: 20,
-    paddingVertical: 6
-  }, 
-  iconMargin: { marginBottom: 4 }, 
-  navText: { fontSize: 12, color: '#888', fontWeight: '500' },
-  navTextActive: { fontSize: 12, color: '#ffffff', fontWeight: 'bold' }
+  
 });
