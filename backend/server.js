@@ -18,7 +18,6 @@ app.use(cors({
 const upload = multer({ dest: 'uploads/' }); // Temporarily stores the PDF
 
 // 1. Try to catch the variables using any common prefix
-// 1. Try to catch the variables using any common prefix
 const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -37,42 +36,61 @@ const ai = new GoogleGenAI({ apiKey: geminiKey });
 
 app.post('/api/upload-lesson', upload.single('pdf'), async (req, res) => {
   try {
-    console.log("--- RUNNING UPDATED CODE ---");
+    // 🟢 1. Extract the selected subject from the frontend form data
+    const selectedSubject = req.body.subject || 'Uncategorized'; 
+
+    console.log(`--- UPLOADING MODULE FOR: ${selectedSubject} ---`);
     console.log("1. Receiving PDF and uploading to Gemini...");
     
     const uploadResult = await ai.files.upload({
       file: req.file.path,
-      config: {
-        mimeType: 'application/pdf', 
-      }
+      config: { mimeType: 'application/pdf' }
     });
 
-    console.log("2. Parsing with Gemini 2.0 Flash...");
+    console.log("2. Parsing with Gemini 1.5 Flash...");
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-1.5-flash',
       contents: [
-        // 🟢 Explicitly tell Gemini to use the uploaded file's URI
+        { fileData: { mimeType: 'application/pdf', fileUri: uploadResult.uri } },
+        `Analyze this educational PDF and divide it into a structured learning module. Entirely skip any group activities and do not include them in your output.
+        Output ONLY a valid JSON object matching this exact schema:
         {
-          fileData: {
-            mimeType: 'application/pdf',
-            fileUri: uploadResult.uri
-          }
-        },
-        "You are an educational data parser. Read this module and divide it into distinct interactive segments. Entirely skip any group activities and do not include them in your output. Output a JSON array containing a lesson_title, brief_summary, and the core_text or activity instructions for each segment."
+          "module_title": "Title of the overall subject/PDF",
+          "module_subtitle": "A one-sentence summary of the entire module",
+          "total_estimated_time": 64, 
+          "lessons": [
+            {
+              "lesson_title": "Name of the specific topic",
+              "duration_minutes": 5, 
+              "type": "reading", 
+              "core_text": "The actual educational content goes here..."
+            }
+          ]
+        }`
       ],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              lesson_title: { type: Type.STRING },
-              brief_summary: { type: Type.STRING },
-              core_text: { type: Type.STRING },
-            },
-            required: ["lesson_title", "brief_summary", "core_text"]
-          }
+          type: Type.OBJECT,
+          properties: {
+            module_title: { type: Type.STRING },
+            module_subtitle: { type: Type.STRING },
+            total_estimated_time: { type: Type.INTEGER },
+            lessons: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  lesson_title: { type: Type.STRING },
+                  duration_minutes: { type: Type.INTEGER },
+                  type: { type: Type.STRING },
+                  core_text: { type: Type.STRING },
+                },
+                required: ["lesson_title", "duration_minutes", "type", "core_text"]
+              }
+            }
+          },
+          required: ["module_title", "module_subtitle", "total_estimated_time", "lessons"]
         }
       }
     });
@@ -83,16 +101,16 @@ app.post('/api/upload-lesson', upload.single('pdf'), async (req, res) => {
     const { data, error } = await supabase
       .from('ai_lessons')
       .insert([{
-          title: 'Oral Communication',
+          title: selectedSubject, // 🟢 2. Dynamically assign the subject here
           subtitle: req.file.originalname.replace('.pdf', ''),
           progress: 0,
-          parsed_content: parsedJsonData
+          parsed_content: parsedJsonData 
       }]);
 
     if (error) throw error;
 
     fs.unlinkSync(req.file.path);
-    res.json({ success: true, message: "✅ Success! Lesson is live on the mobile app." });
+    res.json({ success: true, message: `✅ Success! Lesson added to ${selectedSubject}.` });
 
   } catch (error) {
     console.error(error);

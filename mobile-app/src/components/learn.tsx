@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert } from 'react-native';
+// Note: Keep your 'router' import from 'expo-router'import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LearnScreen() {
   const subjects = [
@@ -24,13 +25,21 @@ export default function LearnScreen() {
           <Text style={styles.screenTitle}>Learn</Text>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+        <ScrollView 
+                  contentContainerStyle={styles.scrollContent} 
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled" // 🟢 Forces touches to register immediately
+                  nestedScrollEnabled={true} // 🟢 Prevents conflicts with the home.tsx swiper
+                >          
           {/* 🟠 1. AI Recommended Focus (Floats over the curve) */}
           <View style={styles.aiCardContainer}>
             <Text style={styles.sectionSubtitleWhite}>Targeted review based on your latest assessment</Text>
             
-            <TouchableOpacity style={styles.aiCard} activeOpacity={0.8}>
+            <TouchableOpacity 
+              style={styles.aiCard} 
+              activeOpacity={0.8}
+              onPress={() => router.push('/lesson')} // 🟢 Added routing here
+            >
               <View style={{ flex: 1 }}>
                 <View style={styles.aiHeaderRow}>
                   <Ionicons name="sparkles" size={16} color="#ffc107" style={{ marginRight: 6 }} />
@@ -56,7 +65,17 @@ export default function LearnScreen() {
             
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
               {subjects.map((subject) => (
-                <TouchableOpacity key={subject.id} style={styles.subjectCardWide} activeOpacity={0.8}>
+                <TouchableOpacity 
+                  key={subject.id} 
+                  style={styles.subjectCardWide} 
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    // 🟢 Route to the lesson screen if Oral Communication is tapped
+                    if (subject.name === 'Oral Communication') {
+                      router.push('/lesson');
+                    }
+                  }}
+                >
                   <View style={[styles.largeIconContainer, { backgroundColor: subject.color + '15' }]}>
                     <Ionicons name={subject.icon as any} size={40} color={subject.color} />
                   </View>
@@ -71,7 +90,19 @@ export default function LearnScreen() {
             <Text style={styles.sectionTitlePad}>Quizzes</Text>
             <Text style={styles.sectionSubtitlePad}>Check in on your pending evaluations</Text>
             
-            <TouchableOpacity style={styles.actionCard} activeOpacity={0.8}>
+            <TouchableOpacity 
+              style={styles.actionCard} 
+              activeOpacity={0.8}
+              onPress={() => {
+                console.log("Button registered a tap!");
+                Alert.alert("Success", "Button tapped!", [
+                  { 
+                    text: "Go to Lesson", 
+                    onPress: () => router.push('/lesson') 
+                  }
+                ]);
+              }}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>Module 1 Assessment</Text>
                 <Text style={styles.cardSubtitle}>Cookery & Food Safety • 15 Mins</Text>
