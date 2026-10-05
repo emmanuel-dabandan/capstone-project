@@ -70,10 +70,11 @@ export default function LearnScreen() {
                   style={styles.subjectCardWide} 
                   activeOpacity={0.8}
                   onPress={() => {
-                    // 🟢 Route to the lesson screen if Oral Communication is tapped
-                    if (subject.name === 'Oral Communication') {
-                      router.push('/lesson');
-                    }
+                    // 🟢 Pass the subject name as a URL parameter to the lesson screen
+                    router.push({
+                      pathname: '/lesson',
+                      params: { subject: subject.name }
+                    });
                   }}
                 >
                   <View style={[styles.largeIconContainer, { backgroundColor: subject.color + '15' }]}>
