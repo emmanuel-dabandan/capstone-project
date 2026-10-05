@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase'; // Ensure this points to your shared client
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { FlatList } from 'react-native-gesture-handler';
@@ -10,35 +10,31 @@ import { FlatList } from 'react-native-gesture-handler';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
 
-
-// 🟢 NEW: Dynamic SVG Progress Ring Component
+// Dynamic SVG Progress Ring Component
 const ProgressCircle = ({ progress }: { progress: number }) => {
   const size = 70;
   const strokeWidth = 6;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
-  // Calculate how much of the ring should be empty
   const fillAmount = circumference - (progress / 100) * circumference;
   const isZero = progress === 0;
 
   return (
     <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        {/* Faded Background Track */}
         <Circle 
           cx={size / 2} cy={size / 2} r={radius} 
           stroke={isZero ? '#00000020' : '#ffffff40'} 
           strokeWidth={strokeWidth} fill="none" 
         />
-        {/* Active Progress Ring */}
         <Circle 
           cx={size / 2} cy={size / 2} r={radius} 
           stroke={isZero ? '#000000' : '#ffffff'} 
           strokeWidth={strokeWidth} fill="none" 
           strokeDasharray={`${circumference} ${circumference}`}
           strokeDashoffset={fillAmount}
-          strokeLinecap="round" // Gives the ends of the progress bar rounded edges
-          rotation="-90" // Starts the progress bar at 12 o'clock
+          strokeLinecap="round"
+          rotation="-90"
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
@@ -49,62 +45,96 @@ const ProgressCircle = ({ progress }: { progress: number }) => {
   );
 };
 
+// Base subjects fallback before DB data loads
+const defaultSubjects = [
+  { id: 1, title: 'Cookery & Food Safety', subtitle: 'No modules yet', progress: 0 },
+  { id: 2, title: 'Oral Communication', subtitle: 'No modules yet', progress: 0 },
+  { id: 3, title: 'General Mathematics', subtitle: 'No modules yet', progress: 0 },
+  { id: 4, title: 'Personal Development', subtitle: 'No modules yet', progress: 0 },
+  { id: 5, title: 'Earth & Life Science', subtitle: 'No modules yet', progress: 0 },
+  { id: 6, title: 'Understanding Culture', subtitle: 'No modules yet', progress: 0 },
+];
+
 export default function DashboardScreen() {
-  const learningModules = [
-    { id: 1, title: 'Cookery & Food Safety', subtitle: 'Lesson 3: Kitchen Tools', progress: 80 },
-    { id: 2, title: 'Oral Communication', subtitle: 'Lesson 1: Basics of Speech', progress: 15 },
-    { id: 3, title: 'General Mathematics', subtitle: 'Lesson 1: Functions & Relations', progress: 0 },
-    { id: 4, title: 'Personal Development', subtitle: 'Lesson 1: Knowing Oneself', progress: 0 },
-    { id: 5, title: 'Earth & Life Science', subtitle: 'Lesson 4: Rock Forming Minerals', progress: 30 },
-    { id: 6, title: 'Understanding Culture', subtitle: 'Lesson 1: Human Variations', progress: 0 },
-  ];
-  
   const [firstName, setFirstName] = useState('');
   const [strand, setStrand] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [learningModules, setLearningModules] = useState(defaultSubjects);
   
   const [xp, setXp] = useState(1250);
   const [streak, setStreak] = useState(5);
   const [timeLeft, setTimeLeft] = useState(38400);
 
-  // 🟢 NEW: State to hold the infinite scrolling modules
-// 🟢 NEW: Creates 100 copies of your 6 subjects (600 cards total)
-  // 🟢 Creates 600 unique objects so React never sees a duplicate key
+  // Creates unique copies for the infinite scroll based on live data
   const infiniteModules = Array(100)
     .fill(learningModules)
     .flat()
     .map((module, index) => ({
       ...module,
-      uniqueId: `card-${index}` // e.g., "card-0", "card-1", "card-599"
+      uniqueId: `card-${index}`
     }));
+
   useEffect(() => {
-    const fetchUserData = async () => {
+    const fetchDashboardData = async () => {
       try {
+        console.log("--- 🔍 DASHBOARD DIAGNOSTICS START ---");
+        
+        // 1. Check Authentication
         const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-          router.replace('/' as any);
-          return;
+        console.log("1. User Logged In?", user ? `YES (${user.id})` : "NO");
+        if (authError) console.log("Auth Error:", authError.message);
+
+        if (user) {
+          // 2. Fetch Profile
+          console.log("2. Querying 'students' table for ID:", user.id);
+          const { data: profile, error: profileError } = await supabase
+            .from('students')
+            .select('first_name, strand') 
+            .eq('id', user.id)
+            .single();
+
+          console.log("3. DB Response Data:", profile);
+          if (profileError) console.log("4. DB Response Error:", profileError.message, profileError.code);
+
+          if (profile) {
+            setFirstName(profile.first_name);
+            setStrand(profile.strand || 'Explorer'); 
+          }
         }
 
-        const { data, error } = await supabase
-          .from('students')
-          .select('first_name, strand')
-          .eq('id', user.id)
-          .single();
+        // 3. Fetch Modules
+        console.log("5. Fetching AI Lessons...");
+        const { data: lessonsData, error: lessonsError } = await supabase
+          .from('ai_lessons')
+          .select('title, subtitle, progress')
+          .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        if (data) {
-          setFirstName(data.first_name);
-          setStrand(data.strand || 'Explorer'); 
+        if (lessonsError) console.log("6. Modules Error:", lessonsError.message);
+
+        if (!lessonsError && lessonsData) {
+          const mergedModules = defaultSubjects.map(subj => {
+            const dbMatch = lessonsData.find(l => l.title === subj.title);
+            if (dbMatch) {
+              return { 
+                ...subj, 
+                subtitle: dbMatch.subtitle || 'Current Module', 
+                progress: dbMatch.progress || 0 
+              };
+            }
+            return subj;
+          });
+          setLearningModules(mergedModules);
+          console.log("7. Modules successfully merged and loaded!");
         }
+        console.log("--- 🔍 DASHBOARD DIAGNOSTICS END ---");
       } catch (error) {
-        console.error("Error fetching user data:", error);
+        console.error("Critical Catch Error:", error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchUserData();
+    fetchDashboardData();
   }, []);
 
   useEffect(() => {
@@ -121,6 +151,8 @@ export default function DashboardScreen() {
     return `${h}h ${m}m ${s}s`;
   };
 
+  const SPACER_WIDTH = (Dimensions.get('window').width - CARD_WIDTH) / 2 - 7.5;
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -129,20 +161,15 @@ export default function DashboardScreen() {
     );
   }
 
-  const SPACER_WIDTH = (Dimensions.get('window').width - CARD_WIDTH) / 2 - 7.5;
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      
       <View style={styles.mainBackground}>
         
         <View style={styles.topSection}>
-          
           <View style={styles.headerBar}>
             <View style={styles.statPill}>
               <Text style={styles.statTextXP}>{xp} XP</Text>
             </View>
-            
             <View style={[styles.statPill, { borderColor: '#ff9800', backgroundColor: '#fff3e0' }]}>
               <Text style={[styles.statText, { color: '#e65100' }]}>{streak} Day Streak</Text>
             </View>
@@ -150,13 +177,11 @@ export default function DashboardScreen() {
 
           <View style={styles.welcomeContainer}>
             <Text style={styles.greetingText}>Welcome,</Text>
-            <Text style={styles.nameText}>{firstName}?</Text>
+            <Text style={styles.nameText}>{firstName}!</Text>
           </View>
-
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      
           <View style={styles.challengeCard}>
             <View style={styles.challengeHeader}>
               <Text style={styles.challengeTitle}>Today's Challenge</Text>
@@ -172,9 +197,7 @@ export default function DashboardScreen() {
             <Text style={styles.sectionTitle}>Your Learning Path</Text>
             
             <FlatList 
-                // 🟢 ADD THIS LINE: Physically slides Android 15 pixels to the left, iOS stays at 0
                 style={{ transform: [{ translateX: Platform.OS === 'android' ? -15 : 0 }] }} 
-                
                 horizontal={true}
                 nestedScrollEnabled={true} 
                 showsHorizontalScrollIndicator={false} 
@@ -190,16 +213,12 @@ export default function DashboardScreen() {
                   offset: (CARD_WIDTH + 15) * index,
                   index,
                 })}
-
                 ListHeaderComponent={Platform.OS === 'android' ? <View style={{ width: SPACER_WIDTH }} /> : null}
                 ListFooterComponent={Platform.OS === 'android' ? <View style={{ width: SPACER_WIDTH }} /> : null}
-
-              renderItem={({ item: module }) => (
-                // 🟢 Ensure there is NO key property on this View!
+                renderItem={({ item: module }) => (
                 <View style={[styles.subjectCard, { width: CARD_WIDTH }]}>
                   <View style={styles.cardContentRow}>
                     
-                    {/* Left Side (65%): Text & Button */}
                     <View style={styles.cardLeft}>
                       <Text style={styles.subjectTitle} numberOfLines={2}>
                         {module.title}
@@ -208,9 +227,11 @@ export default function DashboardScreen() {
                         {module.subtitle}
                       </Text>
 
+                      {/* 🟢 ROUTING HOOKED UP HERE */}
                       <TouchableOpacity 
                         style={[styles.cardButton, module.progress === 0 ? styles.startButton : styles.continueButton]}
                         activeOpacity={0.8}
+                        onPress={() => router.push(`/lesson?subject=${encodeURIComponent(module.title)}`)}
                       >
                         <Text style={[styles.cardButtonText, module.progress === 0 ? styles.startButtonText : styles.continueButtonText]}>
                           {module.progress === 0 ? 'Start Task' : 'View Task'}
@@ -218,7 +239,6 @@ export default function DashboardScreen() {
                       </TouchableOpacity>
                     </View>
 
-                   {/* Right Side (35%): Dynamic Circular Progress */}
                     <View style={styles.cardRight}>
                       <ProgressCircle progress={module.progress} />
                     </View>
@@ -231,7 +251,6 @@ export default function DashboardScreen() {
 
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Recent Updates</Text>
-            
             <TouchableOpacity activeOpacity={0.7} style={styles.seeAllButton}>
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
@@ -259,9 +278,6 @@ export default function DashboardScreen() {
 
         </ScrollView>
       </View>
-
-      
-
     </SafeAreaView>
   );
 }
@@ -271,40 +287,12 @@ const styles = StyleSheet.create({
   mainBackground: { flex: 1, backgroundColor: '#fcfaf8' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8' },
   
-  topSection: {
-    backgroundColor: '#2e64e5', 
-    paddingBottom: 20, 
-    borderBottomLeftRadius: 35, 
-    borderBottomRightRadius: 35,
-    zIndex: 1,
-  },
-  
+  topSection: { backgroundColor: '#2e64e5', paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, zIndex: 1 },
   scrollContent: { paddingBottom: 100, paddingTop: 10 }, 
 
-  // 🟢 CLEANED UP: Removed the duplicate headerBar style
-  headerBar: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    gap: 15, 
-    paddingHorizontal: 20, 
-    paddingTop: 10, 
-    paddingBottom: 25 
-  },
+  headerBar: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 25 },
+  statPill: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#d0ddff' },  
   
-  statPill: { 
-    flex: 1, 
-    flexDirection: 'row', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#ffffff', 
-    paddingVertical: 6, 
-    paddingHorizontal: 12, 
-    borderRadius: 20, 
-    borderWidth: 1, 
-    borderColor: '#d0ddff' 
-  },  
-  
-  statIcon: { fontSize: 16, marginRight: 5 },
   statTextXP: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
   statText: { fontSize: 14, fontWeight: 'bold' },
 
@@ -312,35 +300,11 @@ const styles = StyleSheet.create({
   greetingText: { fontSize: 18, color: '#e0e8f9' }, 
   nameText: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' }, 
 
-  sectionHeaderRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'baseline' 
-  },
-  
-  seeAllButton: {
-    paddingRight: 20, 
-    marginBottom: 15, 
-  },
-  
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  seeAllButton: { paddingRight: 20, marginBottom: 15 },
   seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
   
-  challengeCard: { 
-    marginHorizontal: 20, 
-    backgroundColor: '#ffffff', 
-    borderRadius: 16, 
-    padding: 20, 
-    borderWidth: 1, 
-    borderColor: '#d0ddff', 
-    marginBottom: 30, 
-    marginTop: 0, // 🟢 RESTORED: Re-added negative top margin so it overlaps the header
-    elevation: 5, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.15, 
-    shadowRadius: 6, 
-    zIndex: 20
-  },
+  challengeCard: { marginHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#d0ddff', marginBottom: 30, marginTop: 0, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20 },
   challengeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   challengeTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
   timerText: { fontSize: 14, fontWeight: 'bold', color: '#ffffff' },  
@@ -349,24 +313,9 @@ const styles = StyleSheet.create({
 
   carouselContainer: { paddingBottom: 20 },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, marginBottom: 15 },
-  carouselContent: {
-    alignItems: 'center',
-    // 🟢 iOS is left blank (undefined), Android uses 0 because it relies on the invisible spacers
-    paddingHorizontal: Platform.OS === 'ios' ? undefined : 0, 
-  },
+  carouselContent: { alignItems: 'center', paddingHorizontal: Platform.OS === 'ios' ? undefined : 0 },
   
-  subjectCard: { 
-    width: CARD_WIDTH,
-    marginHorizontal: 7.5,
-    backgroundColor: '#5480e5', 
-    borderRadius: 24,           
-    padding: 20, 
-    elevation: 4, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.2, 
-    shadowRadius: 5 
-  },
+  subjectCard: { width: CARD_WIDTH, marginHorizontal: 7.5, backgroundColor: '#5480e5', borderRadius: 24, padding: 20, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5 },
   cardContentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardLeft: { width: '65%', justifyContent: 'center', paddingRight: 15 },
   cardRight: { width: '35%', alignItems: 'flex-end', justifyContent: 'center' },
@@ -381,60 +330,12 @@ const styles = StyleSheet.create({
   startButtonText: { color: '#000000' },
   continueButtonText: { color: '#050505' },
 
-  circularProgress: { width: 70, height: 70, borderRadius: 35, borderWidth: 6, justifyContent: 'center', alignItems: 'center' },
   circularProgressText: { fontSize: 16, fontWeight: 'bold', color: '#ffffff' },
 
   notificationsContainer: { paddingHorizontal: 20, paddingBottom: 20 },
-  notificationCard: { 
-    backgroundColor: '#ffffff', 
-    borderRadius: 12, 
-    paddingVertical: 10,   
-    paddingHorizontal: 15, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: 12, 
-    borderWidth: 1, 
-    borderColor: '#e0d8d0', 
-    elevation: 1, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 1 }, 
-    shadowOpacity: 0.05, 
-    shadowRadius: 2 
-  },  
+  notificationCard: { backgroundColor: '#ffffff', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#e0d8d0', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },  
   notificationTextWrapper: { flex: 1 },
   notificationTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 2 },
   notificationMessage: { fontSize: 12, color: '#666', marginBottom: 6, lineHeight: 15 },
   notificationTime: { fontSize: 12, color: '#aaa', fontWeight: '500' },
-
-  bottomNav: { 
-    position: 'absolute', 
-    bottom: 0, 
-    left: 0, 
-    right: 0, 
-    height: 80, 
-    backgroundColor: '#ffffff', 
-    flexDirection: 'row', 
-    borderTopWidth: 1, 
-    borderTopColor: '#e0d8d0' 
-  },
-  
-  navItem: { 
-    flex: 1, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    paddingBottom: 15 
-  },
-  
-  navItemActive: { 
-    backgroundColor: '#2e64e5', 
-    borderTopRightRadius: 30, 
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  }, 
-  
-  iconMargin: { marginBottom: 4 }, 
-  
-  navText: { fontSize: 12, color: '#888', fontWeight: '500' },
-  navTextActive: { fontSize: 12, color: '#ffffff', fontWeight: 'bold' }
 });

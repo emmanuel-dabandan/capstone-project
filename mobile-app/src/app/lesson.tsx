@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router'; 
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 
 interface ParsedLesson {
   lesson_title: string;
