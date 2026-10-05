@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router'; // 🟢 Added useLocalSearchParams
+import { useRouter, useLocalSearchParams } from 'expo-router'; 
 import { supabase } from '../lib/supabaseClient';
 
 interface ParsedLesson {
@@ -28,7 +28,6 @@ interface DBRow {
 
 export default function LessonScreen() {
   const router = useRouter();
-  // 🟢 Catch the subject passed from learn.tsx
   const { subject } = useLocalSearchParams(); 
   const subjectName = typeof subject === 'string' ? subject : 'Course Modules';
 
@@ -38,7 +37,7 @@ export default function LessonScreen() {
 
   useEffect(() => {
     fetchModules();
-  }, [subjectName]); // Re-fetch if the subject changes
+  }, [subjectName]); 
 
   const fetchModules = async () => {
     try {
@@ -46,7 +45,7 @@ export default function LessonScreen() {
       const { data, error } = await supabase
         .from('ai_lessons')
         .select('*')
-        .eq('title', subjectName) // 🟢 Strict filter: Only fetch modules for THIS subject
+        .eq('title', subjectName) 
         .order('created_at', { ascending: false })
         .limit(8);
 
@@ -96,7 +95,6 @@ export default function LessonScreen() {
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           
-          {/* 🟢 Display the dynamic subject name in the header */}
           <Text style={styles.headerTitle}>{subjectName}</Text>
           <Text style={styles.headerSubtitle}>Complete each lesson sequentially to unlock the next one.</Text>
 
@@ -139,10 +137,11 @@ export default function LessonScreen() {
                     <View style={styles.lessonsContainer}>
                       <Text style={styles.moduleCardSubtitle}>{moduleSubtitle}</Text>
                       
+                      {/* 🟢 Corrected to map over 'lessons' directly */}
                       {lessons.map((lesson, index) => {
                         const isCompleted = index < activeLessonIndex;
                         const isActive = index === activeLessonIndex;
-                        const isLocked = index > activeLessonIndex; 
+                        const isLocked = index > activeLessonIndex + 1; 
                         
                         return (
                           <TouchableOpacity 
@@ -150,6 +149,7 @@ export default function LessonScreen() {
                             style={[styles.lessonRow, isLocked && { opacity: 0.5 }]}
                             disabled={isLocked}
                             activeOpacity={0.7}
+                            onPress={() => router.push('/learning')}
                           >
                             <View style={[styles.iconBox, isLocked ? styles.iconBoxLocked : styles.iconBoxActive]}>
                               <Ionicons 
