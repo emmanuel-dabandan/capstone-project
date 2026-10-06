@@ -6,6 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import DashboardScreen from '../components/dashboard';
 import LearnScreen from '../components/learn';
 import SettingsScreen from '../components/settings';
+import StatsScreen from '../components/stats';
+
 
 const { width } = Dimensions.get('window');
 
@@ -76,8 +78,8 @@ export default function HomeScreen() {
         </View>
 
         {/* Page 2: Stats (Placeholder) */}
-        <View style={{ width, flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ fontSize: 18, color: '#888' }}>Stats Screen Coming Soon</Text>
+        <View style={{ width, flex: 1 }}>
+          <StatsScreen />
         </View>
 
         {/* Page 3: Profile (Placeholder) */}

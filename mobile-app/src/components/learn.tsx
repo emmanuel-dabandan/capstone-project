@@ -1,11 +1,14 @@
-import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert } from 'react-native';
-// Note: Keep your 'router' import from 'expo-router'import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../lib/supabase'; // 🟢 Added Supabase import
 
 export default function LearnScreen() {
+  const [recommendation, setRecommendation] = useState<{ target_module: string, rationale: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
   const subjects = [
     { id: 1, name: 'Cookery & Food Safety', icon: 'restaurant', color: '#5480e5' }, 
     { id: 2, name: 'Oral Communication', icon: 'chatbubbles', color: '#3B82F6' }, 
@@ -15,10 +18,37 @@ export default function LearnScreen() {
     { id: 6, name: 'Understanding Culture', icon: 'library', color: '#6366F1' }, 
   ];
 
+  useEffect(() => {
+    fetchAIRecommendation();
+  }, []);
+
+  const fetchAIRecommendation = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const response = await fetch(`https://glorious-happiness-x5955j7qpxqgfp4p9-3000.app.github.dev/api/ai-recommendation/${user.id}`);
+      
+      // 🟢 SAFETY CHECK: Ensure the response is actually JSON before parsing
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        const data = await response.json();
+        setRecommendation(data);
+      } else {
+        console.error("Backend returned HTML instead of JSON. Check if your Codespace port 3000 is Public.");
+        setRecommendation(null);
+      }
+      
+    } catch (error) {
+      console.error("Failed to load AI recommendation:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.mainBackground}>
-        
         
         {/* 🟠 TOP SECTION (Blue Background, Curved Bottom) */}
         <View style={styles.topSection}>
@@ -26,11 +56,11 @@ export default function LearnScreen() {
         </View>
 
         <ScrollView 
-                  contentContainerStyle={styles.scrollContent} 
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled" // 🟢 Forces touches to register immediately
-                  nestedScrollEnabled={true} // 🟢 Prevents conflicts with the home.tsx swiper
-                >          
+          contentContainerStyle={styles.scrollContent} 
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
+        >          
           {/* 🟠 1. AI Recommended Focus (Floats over the curve) */}
           <View style={styles.aiCardContainer}>
             <Text style={styles.sectionSubtitleWhite}>Targeted review based on your latest assessment</Text>
@@ -38,19 +68,36 @@ export default function LearnScreen() {
             <TouchableOpacity 
               style={styles.aiCard} 
               activeOpacity={0.8}
-              onPress={() => router.push('/lesson')} // 🟢 Added routing here
+              disabled={isLoading || !recommendation}
+              onPress={() => {
+                if (recommendation) {
+                  router.push(`/lesson?subject=${encodeURIComponent(recommendation.target_module)}` as any);
+                }
+              }}
             >
-              <View style={{ flex: 1 }}>
-                <View style={styles.aiHeaderRow}>
-                  <Ionicons name="sparkles" size={16} color="#ffc107" style={{ marginRight: 6 }} />
-                  <Text style={styles.aiBadgeText}>AI Recommended</Text>
+              {isLoading ? (
+                <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10 }}>
+                  <ActivityIndicator size="small" color="#2e64e5" />
                 </View>
-                <Text style={styles.cardTitle}>Kitchen Tools & Equipment</Text>
-                <Text style={styles.cardSubtitle}>7 concepts to review • 10 Mins</Text>
-              </View>
-              <View style={styles.aiButton}>
-                <Text style={styles.aiButtonText}>Review</Text>
-              </View>
+              ) : (
+                <>
+                  <View style={{ flex: 1, paddingRight: 15 }}>
+                    <View style={styles.aiHeaderRow}>
+                      <Ionicons name="sparkles" size={16} color="#ffc107" style={{ marginRight: 6 }} />
+                      <Text style={styles.aiBadgeText}>AI Insight</Text>
+                    </View>
+                    <Text style={styles.cardTitle}>
+                      {recommendation ? recommendation.target_module : 'Keep Exploring'}
+                    </Text>
+                    <Text style={styles.cardSubtitle}>
+                      {recommendation ? recommendation.rationale : 'Complete more activities to get personalized AI tips!'}
+                    </Text>
+                  </View>
+                  <View style={styles.aiButton}>
+                    <Text style={styles.aiButtonText}>Review</Text>
+                  </View>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -70,7 +117,6 @@ export default function LearnScreen() {
                   style={styles.subjectCardWide} 
                   activeOpacity={0.8}
                   onPress={() => {
-                    // 🟢 Pass the subject name as a URL parameter to the lesson screen
                     router.push({
                       pathname: '/lesson',
                       params: { subject: subject.name }
@@ -176,8 +222,6 @@ export default function LearnScreen() {
 
         </ScrollView>
       </View>
-
-      
     </SafeAreaView>
   );
 }
@@ -318,7 +362,4 @@ const styles = StyleSheet.create({
   cardSubtitle: { fontSize: 13, color: '#888' },
   startButton: { backgroundColor: '#2e64e5', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 10 },
   startButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
-
-  // --- Bottom Navigation ---
-  
 });

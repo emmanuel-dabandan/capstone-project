@@ -207,9 +207,18 @@ export default function LearningScreen() {
         )}
 
         {/* 🚀 START ACTIVITY BUTTON */}
-        <TouchableOpacity style={styles.primaryButton} activeOpacity={0.8}>
-          <Text style={styles.primaryButtonText}>Start Activity</Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.primaryButton} 
+            activeOpacity={0.8}
+            onPress={() => {
+              router.push({
+                pathname: '/activity' as any, // 🟢 Add "as any" right here
+                params: { lessonData: JSON.stringify(currentLesson) }
+              });
+            }}
+          >
+            <Text style={styles.primaryButtonText}>Start Activity</Text>
+          </TouchableOpacity>
         
       </ScrollView>
     </View>
