@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
@@ -77,71 +77,72 @@ export default function DashboardScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const registerForPushNotificationsAsync = async (userId: string) => {
-      let token;
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', { name: 'default', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#2e64e5' });
-      }
-      if (Device.isDevice) {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
+  useFocusEffect(
+    useCallback(() => {
+      const registerForPushNotificationsAsync = async (userId: string) => {
+        let token;
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('default', { name: 'default', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#2e64e5' });
         }
-        if (finalStatus === 'granted') {
-          token = (await Notifications.getExpoPushTokenAsync({ projectId: "your-expo-project-id-here" })).data;
-          await supabase.from('students').update({ expo_push_token: token }).eq('id', userId);
-        }
-      }
-    };
-
-    const fetchDashboardData = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await registerForPushNotificationsAsync(user.id);
-
-          const { data: profile } = await supabase
-            .from('students')
-            .select('first_name, strand, xp, streak, last_challenge_date') 
-            .eq('id', user.id)
-            .single();
-
-          if (profile) {
-            setFirstName(profile.first_name);
-            setStrand(profile.strand || 'Explorer'); 
-            setXp(profile.xp || 0);
-            setStreak(profile.streak || 0);
-
-            // Check if challenge is done today in PHT
-            const utcMs = new Date().getTime() + (new Date().getTimezoneOffset() * 60000);
-            const todayPHT = new Date(utcMs + (8 * 3600000)).toISOString().split('T')[0];
-            setIsChallengeDone(profile.last_challenge_date === todayPHT);
-
-            // Update last active date
-            await supabase.from('students').update({ last_active_date: todayPHT }).eq('id', user.id);
+        if (Device.isDevice) {
+          const { status: existingStatus } = await Notifications.getPermissionsAsync();
+          let finalStatus = existingStatus;
+          if (existingStatus !== 'granted') {
+            const { status } = await Notifications.requestPermissionsAsync();
+            finalStatus = status;
+          }
+          if (finalStatus === 'granted') {
+            token = (await Notifications.getExpoPushTokenAsync({ projectId: "your-expo-project-id-here" })).data;
+            await supabase.from('students').update({ expo_push_token: token }).eq('id', userId);
           }
         }
+      };
 
-        const { data: lessonsData } = await supabase.from('ai_lessons').select('title, subtitle, progress').order('created_at', { ascending: false });
-        if (lessonsData) {
-          const mergedModules = defaultSubjects.map(subj => {
-            const dbMatch = lessonsData.find(l => l.title === subj.title);
-            return dbMatch ? { ...subj, subtitle: dbMatch.subtitle || 'Current Module', progress: dbMatch.progress || 0 } : subj;
-          });
-          setLearningModules(mergedModules);
+      const fetchDashboardData = async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await registerForPushNotificationsAsync(user.id);
+
+            const { data: profile } = await supabase
+              .from('students')
+              .select('first_name, strand, xp, streak, last_challenge_date') 
+              .eq('id', user.id)
+              .single();
+
+            if (profile) {
+              setFirstName(profile.first_name);
+              setStrand(profile.strand || 'Explorer'); 
+              setXp(profile.xp || 0);
+              setStreak(profile.streak || 0);
+
+              // Check if challenge is done today in PHT
+              const todayPHT = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+              setIsChallengeDone(profile.last_challenge_date === todayPHT);
+
+              // Update last active date
+              await supabase.from('students').update({ last_active_date: todayPHT }).eq('id', user.id);
+            }
+          }
+
+          const { data: lessonsData } = await supabase.from('ai_lessons').select('title, subtitle, progress').order('created_at', { ascending: false });
+          if (lessonsData) {
+            const mergedModules = defaultSubjects.map(subj => {
+              const dbMatch = lessonsData.find(l => l.title === subj.title);
+              return dbMatch ? { ...subj, subtitle: dbMatch.subtitle || 'Current Module', progress: dbMatch.progress || 0 } : subj;
+            });
+            setLearningModules(mergedModules);
+          }
+        } catch (error) {
+          console.error(error);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+      };
 
-    fetchDashboardData();
-  }, []);
+      fetchDashboardData();
+    }, [])
+  );
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -267,7 +268,7 @@ const styles = StyleSheet.create({
   challengeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
   challengeTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
   challengeSubtitle: { fontSize: 13, color: '#666', marginTop: 2 },
-challengeTimerBadge: { 
+  challengeTimerBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     backgroundColor: '#f0f4ff', 

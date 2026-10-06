@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Dimensions, TextInput, Platform } from 'react-native';import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Dimensions, TextInput, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
@@ -92,17 +93,25 @@ export default function GauntletScreen() {
           const currentXp = profile?.xp || 0;
 
           // Calculate today in PHT (Philippine Time)
-          const utcMs = new Date().getTime() + (new Date().getTimezoneOffset() * 60000);
-          const todayPHT = new Date(utcMs + (8 * 3600000)).toISOString().split('T')[0];
+          const todayPHT = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
-          // Update XP and lock the challenge for today
-          await supabase
+          // 🟢 NEW: Explicitly catch and read the error from Supabase
+          const { error: updateError } = await supabase
             .from('students')
             .update({ 
               xp: currentXp + 150,
               last_challenge_date: todayPHT
             })
             .eq('id', user.id);
+
+          if (updateError) {
+            console.error("SUPABASE UPDATE FAILED:", updateError);
+            alert(`Database Error: ${updateError.message}`);
+            setIsFinishing(false);
+            return; // Stop the function so it doesn't show the success screen
+          }
+          
+          console.log("✅ XP Successfully added to database!");
         }
       } catch (error) {
         console.error("Error saving gauntlet progress:", error);

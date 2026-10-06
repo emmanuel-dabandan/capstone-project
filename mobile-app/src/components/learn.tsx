@@ -141,13 +141,28 @@ export default function LearnScreen() {
               style={styles.actionCard} 
               activeOpacity={0.8}
               onPress={() => {
-                console.log("Button registered a tap!");
-                Alert.alert("Success", "Button tapped!", [
-                  { 
-                    text: "Go to Lesson", 
-                    onPress: () => router.push('/lesson') 
-                  }
-                ]);
+                const currentSubject = 'Cookery & Food Safety'; // This will be dynamic when you map over real pending quizzes
+
+                Alert.alert(
+                  "Assessment Readiness",
+                  "This 15-item evaluation can only be taken ONCE. Your final score will be permanently recorded.\n\nHave you fully reviewed the module, or would you like to practice first?",
+                  [
+                    { 
+                      text: "Practice First", 
+                      // Routes to practice with the specific subject
+                      onPress: () => router.push({ pathname: '/practice', params: { subject: currentSubject } } as any)                    },
+                    {
+                      text: "Cancel",
+                      style: "cancel"
+                    },
+                    { 
+                      text: "Start Evaluation", 
+                      // 🟢 ROUTES TO QUIZ WITH THE EXACT MODULE SUBJECT
+                      onPress: () => router.push({ pathname: '/quiz', params: { subject: currentSubject } }), 
+                      style: "destructive" 
+                    }
+                  ]
+                );
               }}
             >
               <View style={{ flex: 1 }}>
