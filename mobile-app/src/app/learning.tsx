@@ -131,8 +131,12 @@ export default function LearningScreen() {
             activeOpacity={0.8}
           >
             <Ionicons name="information-circle-outline" size={20} color={activeTab === 'overview' ? '#FFF' : '#6B7280'} />
-            <Text style={[styles.toggleText, activeTab === 'overview' ? styles.toggleTextActive : styles.toggleTextInactive]}>
-              AI-Generated Overview
+            <Text 
+              style={[styles.toggleText, activeTab === 'overview' ? styles.toggleTextActive : styles.toggleTextInactive]}
+              numberOfLines={1} 
+              adjustsFontSizeToFit
+            >
+              AI Overview
             </Text>
           </TouchableOpacity>
 
@@ -226,6 +230,19 @@ export default function LearningScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Inside styles in learning.tsx:
+tabButton: {
+  flexDirection: 'row',          // Ensures the icon and text sit side-by-side
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingVertical: 10,
+  paddingHorizontal: 16,
+  borderRadius: 14,
+  gap: 8,                         // Separates the (i) icon from "AI-Generated Overview"
+},
+tabIcon: {
+  marginRight: 6,                 // Fallback spacing for older React Native layouts
+},
   container: { flex: 1, backgroundColor: '#F3F4F6' },
   header: { backgroundColor: '#2563EB', paddingHorizontal: 20, paddingBottom: 15 },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 20 },
@@ -241,10 +258,23 @@ const styles = StyleSheet.create({
   progressLabelText: { color: '#93C5FD', fontSize: 12 },
   scrollContent: { padding: 20, paddingBottom: 40 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 10 },
-  toggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, borderWidth: 1 },
+  toggleBtn: {
+    flex: 1, // 🟢 Forces the button to take exactly half the space
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8, // 🟢 Slightly smaller padding to fit the text
+    borderRadius: 8,
+  },
   toggleBtnActive: { backgroundColor: '#2563EB', borderColor: '#2563EB', elevation: 2, shadowColor: '#2563EB', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   toggleBtnInactive: { backgroundColor: '#FFF', borderColor: '#E5E7EB' },
-  toggleText: { marginLeft: 8, fontSize: 13, fontWeight: 'bold' },
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+    flexShrink: 1, // 🟢 Prevents the text from pushing the icon out of bounds
+  },
   toggleTextActive: { color: '#FFF' },
   toggleTextInactive: { color: '#6B7280' },
   badgesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
@@ -265,4 +295,5 @@ const styles = StyleSheet.create({
   primaryButton: { backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 10 },
   primaryButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
   fullModuleContainer: { paddingVertical: 20 }
+  
 });

@@ -6,18 +6,20 @@ import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { FlatList } from 'react-native-gesture-handler';
-import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// 🟢 TEMPORARILY DISABLED FOR EXPO GO 
+// import * as Device from 'expo-device';
+// import * as Notifications from 'expo-notifications';
+
+// Notifications.setNotificationHandler({
+//   handleNotification: async () => ({
+//     shouldShowAlert: true,
+//     shouldPlaySound: true,
+//     shouldSetBadge: true,
+//     shouldShowBanner: true,
+//     shouldShowList: true,
+//   }),
+// });
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
@@ -80,6 +82,10 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       const registerForPushNotificationsAsync = async (userId: string) => {
+        // 🟢 TEMPORARILY DISABLED FOR EXPO GO 
+        return undefined;
+
+        /*
         let token;
         if (Platform.OS === 'android') {
           await Notifications.setNotificationChannelAsync('default', { name: 'default', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#2e64e5' });
@@ -96,6 +102,7 @@ export default function DashboardScreen() {
             await supabase.from('students').update({ expo_push_token: token }).eq('id', userId);
           }
         }
+        */
       };
 
       const fetchDashboardData = async () => {

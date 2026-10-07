@@ -23,6 +23,7 @@ interface DBRow {
   id: string;
   title: string;
   subtitle: string;
+  progress?: number; // 🟢 Added to prevent TypeScript errors
   parsed_content: AIModule;
 }
 
@@ -113,7 +114,10 @@ export default function LessonScreen() {
               const moduleSubtitle = parsed?.module_subtitle || "Structured learning module";
               const estTime = parsed?.total_estimated_time || 0;
 
-              const activeLessonIndex = 0; 
+              // 🟢 Dynamically calculate unlocked lessons based on the module's 0-100% progress
+              const totalLessons = lessons.length || 1;
+              const completedLessons = Math.floor(((mod.progress || 0) / 100) * totalLessons);
+              const activeLessonIndex = Math.min(completedLessons, totalLessons - 1); 
 
               return (
                 <View key={mod.id} style={styles.moduleCard}>
@@ -137,7 +141,6 @@ export default function LessonScreen() {
                     <View style={styles.lessonsContainer}>
                       <Text style={styles.moduleCardSubtitle}>{moduleSubtitle}</Text>
                       
-                      {/* 🟢 Corrected to map over 'lessons' directly */}
                       {lessons.map((lesson, index) => {
                         const isCompleted = index < activeLessonIndex;
                         const isActive = index === activeLessonIndex;
