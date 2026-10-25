@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
-// Mock data for the Activity Mastery
+// Keep dummy data for areas you haven't built DB tables for yet
 const accuracyData = [
   { type: 'Multiple Choice', percentage: 85 },
   { type: 'Drag & Drop', percentage: 92 },
@@ -18,56 +18,83 @@ const accuracyData = [
 const timelineData = [
   { date: 'Oct 05', title: 'Mastered: Food Safety Basics', type: 'module' },
   { date: 'Oct 02', title: '7-Day Streak Achieved!', type: 'milestone' },
-  { date: 'Sep 28', title: 'Mastered: Kitchen Tools', type: 'module' },
 ];
-
-// Generates an array of 30 days of mock XP data matching the visual style of the reference image
-const generateBarData = () => {
-  return Array.from({ length: 30 }).map((_, i) => {
-    // Generate some random spikes
-    if (i === 5 || i === 7 || i === 9) return Math.floor(Math.random() * 400) + 200;
-    if (i === 22) return 500;
-    if (i === 28) return 1850; // The massive spike near the end
-    return 0;
-  });
-};
 
 export default function StatsScreen() {
   const [firstName, setFirstName] = useState('');
-  const [xp, setXp] = useState(0);
+  const [totalXp, setTotalXp] = useState(0);
+  const [todayXp, setTodayXp] = useState(0);
   const [streak, setStreak] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [xpData] = useState(generateBarData());
-
-  // Dynamic Calendar Setup
+  const [xpData, setXpData] = useState<number[]>(Array(30).fill(0));
+  
+  // Date calculations
   const todayDate = new Date();
   const currentDay = todayDate.getDate();
   const daysInMonth = new Date(todayDate.getFullYear(), todayDate.getMonth() + 1, 0).getDate();
-  const firstDay = new Date(todayDate.getFullYear(), todayDate.getMonth(), 1).getDay(); // 0 is Sunday
-  
-  // Pad the beginning of the grid with nulls to align the days of the week correctly
+  const firstDay = new Date(todayDate.getFullYear(), todayDate.getMonth(), 1).getDay();
   const calendarDays = Array(firstDay).fill(null).concat([...Array(daysInMonth).keys()].map(n => n + 1));
 
-  // Simulates a streak leading up to today
-const isStreakDay = (day: number | null) => day !== null && day < currentDay && day >= currentDay - streak;
+  // Determine if a calendar day falls within the active streak
+  const isStreakDay = (day: number | null) => day !== null && day <= currentDay && day > currentDay - streak;
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase
-            .from('students')
-            .select('first_name, xp, streak')
-            .eq('id', user.id)
-            .single();
+        if (!user) return;
 
-          if (profile) {
-            setFirstName(profile.first_name);
-            setXp(profile.xp || 3200);
-            setStreak(profile.streak || 5);
-          }
+        // 1. Fetch overall profile stats
+        const { data: profile } = await supabase
+          .from('students')
+          .select('first_name, xp, streak')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          setFirstName(profile.first_name);
+          setTotalXp(profile.xp || 0);
+          setStreak(profile.streak || 0);
         }
+
+        // 2. Fetch the last 30 days of XP logs
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const dateString = thirtyDaysAgo.toISOString().split('T')[0];
+
+        const { data: logs } = await supabase
+          .from('xp_logs')
+          .select('earned_date, xp_gained')
+          .eq('student_id', user.id)
+          .gte('earned_date', dateString)
+          .order('earned_date', { ascending: true });
+
+        // 3. Map logs to the 30-day graph array
+        let newXpData = Array(30).fill(0);
+        let todayEarned = 0;
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
+        if (logs) {
+          logs.forEach(log => {
+            if (log.earned_date === todayStr) {
+              todayEarned = log.xp_gained;
+            }
+            // Calculate how many days ago this was
+            const logDate = new Date(log.earned_date);
+            const diffTime = Math.abs(todayDate.getTime() - logDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            // Place it in the correct bar index (29 is today, 0 is 30 days ago)
+            const index = 29 - diffDays;
+            if (index >= 0 && index < 30) {
+              newXpData[index] = log.xp_gained;
+            }
+          });
+        }
+
+        setXpData(newXpData);
+        setTodayXp(todayEarned);
+
       } catch (error) {
         console.error("Error fetching stats:", error);
       } finally {
@@ -86,29 +113,26 @@ const isStreakDay = (day: number | null) => day !== null && day < currentDay && 
     );
   }
 
+  // Find the highest XP day to scale the graph bars dynamically
+  const maxBarXp = Math.max(...xpData, 100); 
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.mainBackground}>
         
-        {/* HEADER SECTION */}
         <View style={styles.topSection}>
           <Text style={styles.headerTitle}>Analytics</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          {/* THE NEW MONTHLY STREAKS CARD */}
+          {/* STREAKS CARD */}
           <View style={styles.streakCard}>
             <Text style={styles.streakCardTitle}>Streaks</Text>
-            
             <View style={styles.streakStatsRow}>
               <View style={styles.streakStatBlock}>
                 <Text style={styles.streakStatValue}>{streak} days</Text>
-                <Text style={styles.streakStatLabel}>Total</Text>
-              </View>
-              <View style={[styles.streakStatBlock, { alignItems: 'flex-end' }]}>
-                <Text style={styles.streakStatValue}>0 freezes</Text>
-                <Text style={styles.streakStatLabel}>Left</Text>
+                <Text style={styles.streakStatLabel}>Current Streak</Text>
               </View>
             </View>
 
@@ -139,25 +163,25 @@ const isStreakDay = (day: number | null) => day !== null && day < currentDay && 
             </View>
           </View>
 
-          {/* THE NEW EXPERIENCE POINTS BAR GRAPH */}
+          {/* XP BAR GRAPH CARD */}
           <View style={styles.xpCard}>
             <Text style={styles.xpCardTitle}>Experience Points</Text>
             
             <View style={styles.xpStatsRow}>
               <View>
-                <Text style={styles.xpStatValue}>3,200 XP</Text>
-                <Text style={styles.xpStatLabel}>Last 30 days</Text>
+                <Text style={styles.xpStatValue}>{totalXp.toLocaleString()} XP</Text>
+                <Text style={styles.xpStatLabel}>Total XP</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.xpStatValue}>0 XP</Text>
+                <Text style={styles.xpStatValue}>+{todayXp} XP</Text>
                 <Text style={styles.xpStatLabel}>Today</Text>
               </View>
             </View>
 
             <View style={styles.graphContainer}>
-              {/* Background Grid Lines */}
               <View style={styles.graphGrid}>
-                {['1900', '1520', '1140', '760', '380', ''].map((val, idx) => (
+                {/* Dynamically scale Y axis based on user's best day */}
+                {[maxBarXp, Math.round(maxBarXp*0.75), Math.round(maxBarXp*0.5), Math.round(maxBarXp*0.25), ''].map((val, idx) => (
                   <View key={idx} style={styles.graphRow}>
                     <Text style={styles.graphYLabel}>{val}</Text>
                     <View style={styles.graphDashedLine} />
@@ -165,24 +189,22 @@ const isStreakDay = (day: number | null) => day !== null && day < currentDay && 
                 ))}
               </View>
               
-              {/* Foreground Green Bars */}
               <View style={styles.graphBars}>
                 {xpData.map((val, idx) => (
                   <View key={idx} style={styles.barContainer}>
-                    {val > 0 && <View style={[styles.barFill, { height: `${(val / 1900) * 100}%` }]} />}
+                    {val > 0 && <View style={[styles.barFill, { height: `${(val / maxBarXp) * 100}%` }]} />}
                   </View>
                 ))}
               </View>
             </View>
 
-            {/* X-Axis Labels */}
             <View style={styles.graphXAxis}>
-              <Text style={styles.graphXLabel}>06 September</Text>
+              <Text style={styles.graphXLabel}>30 Days Ago</Text>
               <Text style={styles.graphXLabel}>Today</Text>
             </View>
           </View>
 
-          {/* SECONDARY STATS (Tier) */}
+          {/* SECONDARY STATS */}
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <Ionicons name="trophy" size={24} color="#2e64e5" />
@@ -196,11 +218,10 @@ const isStreakDay = (day: number | null) => day !== null && day < currentDay && 
             </View>
           </View>
 
-          {/* SECTION: ACCURACY BARS */}
+          {/* ACTIVITY MASTERY */}
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Activity Mastery</Text>
             <Text style={styles.sectionDescription}>Your average accuracy across different mechanics.</Text>
-            
             <View style={styles.cardContainer}>
               {accuracyData.map((item, index) => (
                 <View key={index} style={styles.masteryWrapper}>
@@ -216,7 +237,7 @@ const isStreakDay = (day: number | null) => day !== null && day < currentDay && 
             </View>
           </View>
 
-          {/* SECTION: TIMELINE */}
+          {/* TIMELINE */}
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Recent Milestones</Text>
             <View style={styles.cardContainer}>
@@ -226,7 +247,6 @@ const isStreakDay = (day: number | null) => day !== null && day < currentDay && 
                     <View style={[styles.timelineNode, item.type === 'milestone' && styles.timelineNodeAccent]} />
                     {index !== timelineData.length - 1 && <View style={styles.timelineLine} />}
                   </View>
-                  
                   <View style={styles.timelineContent}>
                     <Text style={styles.timelineDate}>{item.date}</Text>
                     <Text style={styles.timelineItemTitle}>{item.title}</Text>
@@ -253,7 +273,6 @@ const styles = StyleSheet.create({
   
   scrollContent: { paddingBottom: 100, paddingHorizontal: 20 },
   
-  // Custom Monthly Streaks Card
   streakCard: { backgroundColor: '#ffffff', borderRadius: 20, padding: 25, marginBottom: 15, marginTop: 20, zIndex: 2, borderWidth: 1, borderColor: '#d0ddff', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 5 },
   streakCardTitle: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 20 },
   streakStatsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
@@ -261,7 +280,6 @@ const styles = StyleSheet.create({
   streakStatValue: { fontSize: 26, fontWeight: 'bold', color: '#333' },
   streakStatLabel: { fontSize: 14, color: '#aaa', fontWeight: '500', marginTop: 2 },
   
-  // Calendar Grid
   calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 15 },
   calendarHeader: { width: `${100/7}%`, textAlign: 'center', fontSize: 12, color: '#aaa', fontWeight: 'bold', marginBottom: 10 },
   calendarCell: { width: `${100/7}%`, aspectRatio: 1, justifyContent: 'center', alignItems: 'center', marginVertical: 2 },
@@ -272,7 +290,6 @@ const styles = StyleSheet.create({
   calendarDayActive: { borderWidth: 2, borderColor: '#fbc02d', backgroundColor: '#fffdf5' },
   calendarDayTextActive: { color: '#fbc02d', fontWeight: 'bold' },
 
-  // Experience Points Bar Graph Card
   xpCard: { backgroundColor: '#ffffff', borderRadius: 20, padding: 25, marginBottom: 30, borderWidth: 1, borderColor: '#d0ddff', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 5 },
   xpCardTitle: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 20 },
   xpStatsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
@@ -287,12 +304,11 @@ const styles = StyleSheet.create({
   
   graphBars: { position: 'absolute', top: 6, bottom: 6, left: 45, right: 0, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   barContainer: { flex: 1, alignItems: 'center', height: '100%', justifyContent: 'flex-end' },
-  barFill: { width: 6, backgroundColor: '#00e676', borderRadius: 3 }, // Matching the vibrant green from the image
+  barFill: { width: 6, backgroundColor: '#00e676', borderRadius: 3 },
   
   graphXAxis: { flexDirection: 'row', justifyContent: 'space-between', marginLeft: 45, marginTop: 10 },
   graphXLabel: { fontSize: 12, color: '#aaa', fontWeight: '500' },
 
-  // Secondary Stats
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 },
   statCard: { flex: 1, backgroundColor: '#ffffff', borderRadius: 16, padding: 15, alignItems: 'center', marginHorizontal: 5, borderWidth: 1, borderColor: '#d0ddff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3 },
   statValue: { fontSize: 20, fontWeight: 'bold', color: '#333', marginTop: 8 },
@@ -304,7 +320,6 @@ const styles = StyleSheet.create({
 
   cardContainer: { backgroundColor: '#ffffff', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#d0ddff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3 },
 
-  // Activity Mastery Bars
   masteryWrapper: { marginBottom: 15 },
   masteryHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   masteryLabel: { fontSize: 14, fontWeight: '600', color: '#333' },
@@ -312,7 +327,6 @@ const styles = StyleSheet.create({
   masteryBackground: { height: 10, backgroundColor: '#e0e8f9', borderRadius: 5, overflow: 'hidden' },
   masteryFill: { height: '100%', backgroundColor: '#2e64e5', borderRadius: 5 },
 
-  // Timeline
   timelineRow: { flexDirection: 'row', minHeight: 60 },
   timelineGraphics: { width: 30, alignItems: 'center' },
   timelineNode: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#a0b9c1', zIndex: 2, marginTop: 4 },

@@ -6,8 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
 export default function ActivityScreen() {
-  const { lessonData } = useLocalSearchParams();
-  const [lesson, setLesson] = useState<any>(null);
+  const { lessonData, subject, lessonIndex, totalLessons } = useLocalSearchParams();  const [lesson, setLesson] = useState<any>(null);
   const [activity, setActivity] = useState<any>(null);
 
   // Universal Game State
@@ -34,17 +33,17 @@ export default function ActivityScreen() {
   }, [lessonData]);
 
   // Robust answer validator that handles letters (A/B/C/D), numbers, and full text
-  // 🟢 Ultra-forgiving answer validator
+  // Ultra-forgiving answer validator
   const isAnswerCorrect = (userAns: string, act: any): boolean => {
     if (!act) return false;
     const rawCorrect = act.correct_answer ?? act.answer ?? act.correctAnswer ?? act.correct;
     if (rawCorrect === undefined || rawCorrect === null) return false;
 
-    // Helper: Strips all punctuation, spaces, and prefixes so "Answer!" and "answer " match perfectly
+    // Helper: Preserves math symbols and punctuation while still ignoring "A." prefixes
     const superClean = (str: string) => 
       String(str || '')
         .replace(/^(option\s+[a-d]|option\s+\d|[a-d][.)\-:]|\d+[.)\-:])\s*/i, '') // Remove "A. "
-        .replace(/[^a-z0-9]/gi, '') // Remove everything except raw letters and numbers
+        .trim() // Preserves math symbols like μ
         .toLowerCase();
 
     const cleanUser = superClean(userAns);
@@ -108,11 +107,8 @@ export default function ActivityScreen() {
       correct = isAnswerCorrect(userAnswer, activity);
     }
 
-    // 🟢 TEMPORARY DEV BYPASS: FORCE WIN TO TEST ROUTING
-
     setIsCorrect(correct);
     setIsSubmitted(true);
-    // ... rest of the function
 
     if (correct) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -128,6 +124,10 @@ export default function ActivityScreen() {
 
           const newXp = (profile?.xp || 0) + 50;
           await supabase.from('students').update({ xp: newXp }).eq('id', user.id);
+          
+          // 🟢 ADD THIS LINE: Log the daily XP for the graph!
+          await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 50 });
+          
         } catch (err) {
           console.error("XP Update Failed:", err);
         }
@@ -166,8 +166,29 @@ export default function ActivityScreen() {
   };
 
   const handleContinue = () => {
-    // 🟢 Reroute to the dashboard to force the XP and progress bars to refresh visually
-    router.replace('/dashboard' as any);
+    try {
+      const currentIdx = parseInt(lessonIndex as string, 10) || 0;
+      const total = parseInt(totalLessons as string, 10) || 1;
+      const currentSubject = subject as string || 'Unknown';
+
+      // If we have more lessons, go to the next lesson
+      if (currentIdx < total - 1) {
+        router.push({
+          pathname: '/lesson', 
+          params: { 
+            subject: currentSubject, 
+            lessonIndex: (currentIdx + 1).toString() 
+          }
+        });
+      } else {
+        // Module complete: Force absolute route back to home
+        router.replace('/home'); 
+      }
+    } catch (error) {
+      console.error("Routing error:", error);
+      // Emergency escape hatch if math fails
+      router.replace('/'); 
+    }
   };
 
   // --- RENDER HELPERS ---

@@ -64,16 +64,22 @@ export default function GauntletScreen() {
   };
 
   const checkAnswer = () => {
-    const currentQ = questions[currentIndex];
-    
-    // Normalize text for comparison (ignores case and extra spaces)
-    const normalizedSelected = selectedAnswer.trim().toLowerCase();
-    const normalizedCorrect = currentQ.correct_answer.trim().toLowerCase();
+  const currentQ = questions[currentIndex];
+  
+  // 🟢 BULLETPROOF NORMALIZATION
+  // 1. Safely hunt for the answer key, fallback to an empty string if the AI forgot it
+  const rawCorrect = currentQ.correct_answer ?? currentQ.answer ?? currentQ.correctAnswer ?? "";
+  
+  // 2. Wrap them in String() so .trim() never crashes, even on undefined/null
+  const normalizedSelected = String(selectedAnswer || "").trim().toLowerCase();
+  const normalizedCorrect = String(rawCorrect).trim().toLowerCase();
+  
+  // 3. Ensure it only marks as correct if it's a real match (and not just two empty strings)
+  const correct = (normalizedSelected === normalizedCorrect) && (normalizedCorrect !== "");
 
-    const correct = normalizedSelected === normalizedCorrect;
-    setIsCorrect(correct);
-    setIsSubmitted(true);
-  };
+  setIsCorrect(correct);
+  setIsSubmitted(true);
+};
 
   const handleNext = async () => {
     if (currentIndex < questions.length - 1) {
@@ -96,6 +102,7 @@ export default function GauntletScreen() {
           const todayPHT = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
           // 🟢 NEW: Explicitly catch and read the error from Supabase
+          // 🟢 NEW: Explicitly catch and read the error from Supabase
           const { error: updateError } = await supabase
             .from('students')
             .update({ 
@@ -110,6 +117,9 @@ export default function GauntletScreen() {
             setIsFinishing(false);
             return; // Stop the function so it doesn't show the success screen
           }
+          
+          // 🟢 ADD THIS LINE: Log the daily XP for the graph!
+          await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 150 });
           
           console.log("✅ XP Successfully added to database!");
         }
