@@ -1,48 +1,126 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE_URL } from '../lib/config';
+
+type PracticeQuestion = {
+  question: string;
+  options: string[];
+  correct_answer: string;
+};
+
+// Render's free tier can take ~1 minute to wake up, and Gemini needs time to generate,
+// but we should still never hang forever on a dead server
+const PRACTICE_TIMEOUT_MS = 90000;
+
+// Drops malformed questions instead of crashing on them
+const isValidQuestion = (q: any): q is PracticeQuestion =>
+  !!q &&
+  typeof q.question === 'string' &&
+  Array.isArray(q.options) &&
+  q.options.length >= 2 &&
+  typeof q.correct_answer === 'string';
+
+const sameAnswer = (a: string, b: string) =>
+  a.trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
 
 export default function PracticeScreen() {
   const { subject, module } = useLocalSearchParams<{ subject: string, module: string }>();
-  
-  const [questions, setQuestions] = useState<any[]>([]);
+
+  const [questions, setQuestions] = useState<PracticeQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 🔴 Error state: shown instead of crashing when practice can't be loaded
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(true);
 
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [practiceComplete, setPracticeComplete] = useState(false);
 
-  useEffect(() => {
-    const fetchPractice = async () => {
-      try {
-        // 🟢 FIXED: Now passes BOTH subjectTitle and moduleTitle
-        const response = await fetch(`https://glorious-happiness-x5955j7qpxqgfp4p9-3000.app.github.dev/api/generate-practice?subjectTitle=${encodeURIComponent(subject as string)}&moduleTitle=${encodeURIComponent(module as string)}`);
-        const data = await response.json();
-        
-        // 🟢 FIXED: Check for backend errors
-        if (data.error) {
-          console.warn("Module not ready:", data.error);
-          setQuestions([]);
-        } else {
-          setQuestions(data);
-        }
-      } catch (error) {
-        console.error("Failed to load practice questions", error);
-      } finally {
-        setIsLoading(false);
+  const fetchPractice = useCallback(async () => {
+    if (!subject || !module) {
+      setQuestions([]);
+      setCanRetry(false);
+      setErrorMessage('No module was selected. Please go back and choose a module.');
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    setCanRetry(true);
+    setCurrentIndex(0);
+    setSelectedAnswer('');
+    setIsSubmitted(false);
+    setIsCorrect(false);
+    setPracticeComplete(false);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), PRACTICE_TIMEOUT_MS);
+
+    try {
+      const url =
+        `${API_BASE_URL}/api/generate-practice` +
+        `?subjectTitle=${encodeURIComponent(subject)}&moduleTitle=${encodeURIComponent(module)}`;
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        const preview = (await response.text()).slice(0, 120);
+        console.error(`Practice backend replied ${response.status} (${contentType}): ${preview}`);
+        throw new Error('BACKEND_UNAVAILABLE');
       }
-    };
-    fetchPractice();
+
+      const data = await response.json();
+
+      // Backend answered with JSON, but it's an error object instead of questions
+      if (!Array.isArray(data)) {
+        if (data?.error) {
+          console.warn('Module not ready:', data.error);
+          setQuestions([]);
+          setErrorMessage(
+            "Practice questions aren't available for this module yet. Please make sure it has been uploaded."
+          );
+          return;
+        }
+        throw new Error('BAD_PRACTICE_DATA');
+      }
+
+      const validQuestions = data.filter(isValidQuestion);
+      if (validQuestions.length === 0) throw new Error('BAD_PRACTICE_DATA');
+
+      setQuestions(validQuestions);
+    } catch (error: any) {
+      console.error('Failed to load practice questions', error);
+      setQuestions([]);
+      setErrorMessage(
+        error?.name === 'AbortError'
+          ? 'The server took too long to respond. Please try again.'
+          : "We couldn't load your practice session. Check your connection and try again."
+      );
+    } finally {
+      clearTimeout(timeoutId);
+      setIsLoading(false);
+    }
   }, [subject, module]);
+
+  useEffect(() => {
+    fetchPractice();
+  }, [fetchPractice]);
 
   const checkAnswer = () => {
     const currentQ = questions[currentIndex];
-    const correct = selectedAnswer === currentQ.correct_answer;
-    setIsCorrect(correct);
+    if (!currentQ) return;
+    setIsCorrect(sameAnswer(selectedAnswer, currentQ.correct_answer));
     setIsSubmitted(true);
   };
 
@@ -62,19 +140,7 @@ export default function PracticeScreen() {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2e64e5" />
         <Text style={styles.loadingText}>Generating Practice Session...</Text>
-      </View>
-    );
-  }
-
-  // 🟢 Safety fallback if Gemini returns empty or errors out
-  if (!Array.isArray(questions) || questions.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Ionicons name="alert-circle-outline" size={60} color="#f44336" />
-        <Text style={styles.loadingText}>No practice questions could be generated. Please ensure this specific module has been uploaded!</Text>
-        <TouchableOpacity style={[styles.returnButton, { marginTop: 30, paddingHorizontal: 30 }]} onPress={() => router.back()}>
-          <Text style={styles.returnButtonText}>Go Back</Text>
-        </TouchableOpacity>
+        <Text style={styles.loadingSubtext}>The first request can take up to a minute.</Text>
       </View>
     );
   }
@@ -86,7 +152,7 @@ export default function PracticeScreen() {
           <Ionicons name="barbell" size={80} color="#2e64e5" />
           <Text style={styles.successTitle}>Practice Complete!</Text>
           <Text style={styles.successMessage}>You've successfully reviewed the core concepts for {module || subject}. Your gradebook remains unchanged.</Text>
-          
+
           <TouchableOpacity style={styles.returnButton} onPress={() => router.back()}>
             <Text style={styles.returnButtonText}>Return to Library</Text>
           </TouchableOpacity>
@@ -95,8 +161,32 @@ export default function PracticeScreen() {
     );
   }
 
+  // 🔴 ERROR / EMPTY SCREEN
   const currentQ = questions[currentIndex];
-  const progressPercent = ((currentIndex) / questions.length) * 100;
+  if (errorMessage || !currentQ) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <Ionicons name="alert-circle-outline" size={60} color="#f44336" />
+          <Text style={styles.loadingText}>
+            {errorMessage ?? "We couldn't load your practice session. Please try again."}
+          </Text>
+
+          {canRetry && (
+            <TouchableOpacity style={[styles.returnButton, { marginTop: 30 }]} onPress={fetchPractice}>
+              <Text style={styles.returnButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
+            <Text style={styles.backLinkText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const progressPercent = (currentIndex / questions.length) * 100;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
@@ -114,37 +204,40 @@ export default function PracticeScreen() {
 
       <View style={styles.content}>
         <Text style={styles.questionCounter}>QUESTION {currentIndex + 1} OF {questions.length}</Text>
-        <Text style={styles.questionPrompt}>{currentQ?.question}</Text>
+        <Text style={styles.questionPrompt}>{currentQ.question}</Text>
 
         <View style={styles.optionsContainer}>
-          {currentQ?.options?.map((opt: string, idx: number) => (
-            <TouchableOpacity
-              key={idx}
-              style={[
-                styles.optionButton,
-                selectedAnswer === opt && styles.optionSelected,
-                isSubmitted && selectedAnswer === opt && (isCorrect ? styles.optionCorrect : styles.optionIncorrect),
-                isSubmitted && opt === currentQ.correct_answer && !isCorrect && styles.optionCorrect
-              ]}
-              onPress={() => !isSubmitted && setSelectedAnswer(opt)}
-              activeOpacity={0.7}
-              disabled={isSubmitted}
-            >
-              <Text style={[
-                styles.optionText,
-                selectedAnswer === opt && styles.optionTextSelected,
-                isSubmitted && (opt === currentQ.correct_answer || selectedAnswer === opt) && { color: '#ffffff' }
-              ]}>
-                {opt}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {currentQ.options.map((opt: string, idx: number) => {
+            const isThisCorrect = sameAnswer(opt, currentQ.correct_answer);
+            return (
+              <TouchableOpacity
+                key={idx}
+                style={[
+                  styles.optionButton,
+                  selectedAnswer === opt && styles.optionSelected,
+                  isSubmitted && selectedAnswer === opt && (isCorrect ? styles.optionCorrect : styles.optionIncorrect),
+                  isSubmitted && isThisCorrect && !isCorrect && styles.optionCorrect
+                ]}
+                onPress={() => !isSubmitted && setSelectedAnswer(opt)}
+                activeOpacity={0.7}
+                disabled={isSubmitted}
+              >
+                <Text style={[
+                  styles.optionText,
+                  selectedAnswer === opt && styles.optionTextSelected,
+                  isSubmitted && (isThisCorrect || selectedAnswer === opt) && { color: '#ffffff' }
+                ]}>
+                  {opt}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
       <View style={styles.footer}>
         {!isSubmitted ? (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.submitButton, !selectedAnswer && styles.submitButtonDisabled]}
             onPress={checkAnswer}
             disabled={!selectedAnswer}
@@ -156,7 +249,7 @@ export default function PracticeScreen() {
             <Text style={[styles.feedbackText, { color: isCorrect ? '#4caf50' : '#f44336' }]}>
               {isCorrect ? 'Great job!' : 'Review this concept.'}
             </Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.submitButton, { backgroundColor: isCorrect ? '#4caf50' : '#f44336' }]}
               onPress={handleNext}
             >
@@ -175,7 +268,10 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#fcfaf8' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8', padding: 30 },
   loadingText: { marginTop: 15, fontSize: 16, color: '#666', fontWeight: 'bold', textAlign: 'center' },
-  
+  loadingSubtext: { marginTop: 8, fontSize: 13, color: '#aaa', fontWeight: '600', textAlign: 'center' },
+  backLink: { marginTop: 18, paddingVertical: 10, paddingHorizontal: 20 },
+  backLinkText: { fontSize: 16, fontWeight: 'bold', color: '#2e64e5' },
+
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
   closeButton: { paddingRight: 15 },
   progressBarBg: { flex: 1, height: 12, backgroundColor: '#e0e8f9', borderRadius: 6, overflow: 'hidden' },
@@ -199,7 +295,7 @@ const styles = StyleSheet.create({
   submitButton: { backgroundColor: '#2e64e5', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
   submitButtonDisabled: { backgroundColor: '#a5c0ff' },
   submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
-  
+
   feedbackContainer: { gap: 15 },
   feedbackText: { fontSize: 20, fontWeight: 'bold', textAlign: 'center' },
 
