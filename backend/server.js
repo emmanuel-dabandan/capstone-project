@@ -63,7 +63,7 @@ app.get('/api/ai-recommendation/:userId', async (req, res) => {
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.1-flash-lite',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -129,7 +129,7 @@ app.get('/api/generate-flashcards', async (req, res) => {
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.1-flash-lite',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -170,7 +170,7 @@ app.post('/api/upload-lesson', upload.single('pdf'), async (req, res) => {
 
     console.log("2. Parsing with Gemini 1.5 Flash...");
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.1-flash-lite',
       contents: [
         { fileData: { mimeType: 'application/pdf', fileUri: uploadResult.uri } },
         `Analyze this educational PDF and divide it into a structured learning module. Entirely skip any group activities and do not include them in your output.

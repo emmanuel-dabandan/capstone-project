@@ -6,7 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
 export default function ActivityScreen() {
-  const { lessonData, subject, lessonIndex, totalLessons } = useLocalSearchParams();  const [lesson, setLesson] = useState<any>(null);
+  const { lessonData, subject, lessonIndex, totalLessons } = useLocalSearchParams();
+  const [lesson, setLesson] = useState<any>(null);
   const [activity, setActivity] = useState<any>(null);
   const [nextLesson, setNextLesson] = useState<any>(null);
   const [subjectName, setSubjectName] = useState<string>('');
@@ -32,28 +33,18 @@ export default function ActivityScreen() {
     }
   }, [lessonData]);
 
-<<<<<<< HEAD
   // Robust answer validator that handles letters (A/B/C/D), numbers, and full text
   // Ultra-forgiving answer validator
-=======
->>>>>>> ef73679 (Update server.js for Render deployment)
   const isAnswerCorrect = (userAns: string, act: any): boolean => {
     if (!act) return false;
     const rawCorrect = act.correct_answer ?? act.answer ?? act.correctAnswer ?? act.correct;
     if (rawCorrect === undefined || rawCorrect === null) return false;
 
-<<<<<<< HEAD
     // Helper: Preserves math symbols and punctuation while still ignoring "A." prefixes
-    const superClean = (str: string) => 
+    const superClean = (str: string) =>
       String(str || '')
         .replace(/^(option\s+[a-d]|option\s+\d|[a-d][.)\-:]|\d+[.)\-:])\s*/i, '') // Remove "A. "
         .trim() // Preserves math symbols like μ
-=======
-    const superClean = (str: string) =>
-      String(str || '')
-        .replace(/^(option\s+[a-d]|option\s+\d|[a-d][.)\-:]|\d+[.)\-:])\s*/i, '')
-        .replace(/[^a-z0-9]/gi, '')
->>>>>>> ef73679 (Update server.js for Render deployment)
         .toLowerCase();
 
     const cleanUser = superClean(userAns);
@@ -131,10 +122,10 @@ export default function ActivityScreen() {
 
           const newXp = (profile?.xp || 0) + 50;
           await supabase.from('students').update({ xp: newXp }).eq('id', user.id);
-          
+
           // 🟢 ADD THIS LINE: Log the daily XP for the graph!
           await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 50 });
-          
+
         } catch (err) {
           console.error("XP Update Failed:", err);
         }
@@ -183,7 +174,6 @@ export default function ActivityScreen() {
   };
 
   const handleContinue = () => {
-<<<<<<< HEAD
     try {
       const currentIdx = parseInt(lessonIndex as string, 10) || 0;
       const total = parseInt(totalLessons as string, 10) || 1;
@@ -192,40 +182,20 @@ export default function ActivityScreen() {
       // If we have more lessons, go to the next lesson
       if (currentIdx < total - 1) {
         router.push({
-          pathname: '/lesson', 
-          params: { 
-            subject: currentSubject, 
-            lessonIndex: (currentIdx + 1).toString() 
+          pathname: '/lesson',
+          params: {
+            subject: currentSubject,
+            lessonIndex: (currentIdx + 1).toString()
           }
         });
       } else {
         // Module complete: Force absolute route back to home
-        router.replace('/home'); 
+        router.replace('/home');
       }
     } catch (error) {
       console.error("Routing error:", error);
       // Emergency escape hatch if math fails
-      router.replace('/'); 
-=======
-    if (nextLesson) {
-      router.replace({
-        pathname: '/learning',
-        params: { lessonData: JSON.stringify(nextLesson) }
-      });
-    } else {
-      // 🟢 Force the app to pop exactly 2 screens backward (Activity -> Learning -> Lesson List)
-      // This permanently removes the activity from your back-button history.
-      try {
-        // @ts-ignore - Supported in newer Expo Router versions
-        router.dismiss(2);
-      } catch (e) {
-        // Fallback for older router versions
-        router.replace({
-          pathname: '/lesson',
-          params: { subject: subjectName || 'Course Modules' }
-        });
-      }
->>>>>>> ef73679 (Update server.js for Render deployment)
+      router.replace('/');
     }
   };
 
