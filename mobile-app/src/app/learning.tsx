@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+// 🟢 1. Import SafeAreaView from the safer context library instead of react-native
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
-// Define the new expected data structure
 interface KeyConcept {
   concept_title: string;
   concept_body: string;
@@ -29,13 +30,15 @@ interface AIModule {
 
 export default function LearningScreen() {
   const router = useRouter();
+  const { lessonData } = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState<'overview' | 'full'>('overview');
   const [moduleData, setModuleData] = useState<AIModule | null>(null);
+  const [currentLesson, setCurrentLesson] = useState<ParsedLesson | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchLatestLesson();
-  }, []);
+  }, [lessonData]);
 
   const fetchLatestLesson = async () => {
     try {
@@ -48,6 +51,12 @@ export default function LearningScreen() {
 
       if (error) throw error;
       setModuleData(data.parsed_content);
+
+      if (lessonData) {
+        setCurrentLesson(JSON.parse(lessonData as string));
+      } else if (data.parsed_content?.lessons?.length > 0) {
+        setCurrentLesson(data.parsed_content.lessons[0]);
+      }
     } catch (error: any) {
       console.error("Error fetching learning data:", error.message);
     } finally {
@@ -55,7 +64,6 @@ export default function LearningScreen() {
     }
   };
 
-  // Helper to rotate through pretty icons/colors for the dynamic key concepts
   const getConceptIcon = (index: number) => {
     const designStyles = [
       { name: 'earth', color: '#10B981' },
@@ -75,7 +83,7 @@ export default function LearningScreen() {
     );
   }
 
-  if (!moduleData || !moduleData.lessons || moduleData.lessons.length === 0) {
+  if (!moduleData || !currentLesson) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <Text>No lesson content found. Please upload a module.</Text>
@@ -83,64 +91,58 @@ export default function LearningScreen() {
     );
   }
 
-  // For testing, we grab the very first lesson in the module array
-  const currentLesson = moduleData.lessons[0];
-
   return (
     <View style={styles.container}>
-      {/* 🔵 BLUE HEADER SECTION */}
-      <View style={styles.header}>
-        <SafeAreaView>
-          <View style={styles.headerTop}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => router.back()}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="arrow-back" size={20} color="#3B82F6" />
-            </TouchableOpacity>
-            
-            <View style={styles.headerTextContainer}>
-              <Text style={styles.subjectText}>{moduleData.module_title}</Text>
-              <Text style={styles.lessonTitle}>{currentLesson.lesson_title}</Text>
-            </View>
-            
-            <Text style={styles.counterText}>1/{moduleData.lessons.length}</Text>
+      {/* 🟢 2. Use edges={['top']} to force Android to render the blue header BELOW the status bar */}
+      <SafeAreaView style={styles.header} edges={['top']}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#3B82F6" />
+          </TouchableOpacity>
+
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.subjectText} numberOfLines={1}>{moduleData.module_title}</Text>
+            <Text style={styles.lessonTitle} numberOfLines={1}>{currentLesson.lesson_title}</Text>
           </View>
 
-          {/* Progress Bar */}
-          <View style={styles.progressSection}>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: '5%' }]} />
-            </View>
-            <View style={styles.progressLabels}>
-              <Text style={styles.progressLabelText}>Progress</Text>
-              <Text style={styles.progressLabelText}>0%</Text>
-            </View>
+          <Text style={styles.counterText}>1/{moduleData.lessons.length}</Text>
+        </View>
+
+        <View style={styles.progressSection}>
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: '5%' }]} />
           </View>
-        </SafeAreaView>
-      </View>
+          <View style={styles.progressLabels}>
+            <Text style={styles.progressLabelText}>Progress</Text>
+            <Text style={styles.progressLabelText}>0%</Text>
+          </View>
+        </View>
+      </SafeAreaView>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* 🔘 TOGGLE BUTTONS */}
+
         <View style={styles.toggleRow}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.toggleBtn, activeTab === 'overview' ? styles.toggleBtnActive : styles.toggleBtnInactive]}
             onPress={() => setActiveTab('overview')}
             activeOpacity={0.8}
           >
             <Ionicons name="information-circle-outline" size={20} color={activeTab === 'overview' ? '#FFF' : '#6B7280'} />
-            <Text 
+            <Text
               style={[styles.toggleText, activeTab === 'overview' ? styles.toggleTextActive : styles.toggleTextInactive]}
-              numberOfLines={1} 
+              numberOfLines={1}
               adjustsFontSizeToFit
             >
               AI Overview
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.toggleBtn, activeTab === 'full' ? styles.toggleBtnActive : styles.toggleBtnInactive]}
             onPress={() => setActiveTab('full')}
             activeOpacity={0.8}
@@ -154,7 +156,6 @@ export default function LearningScreen() {
 
         {activeTab === 'overview' ? (
           <View>
-            {/* 🏷️ BADGES ROW */}
             <View style={styles.badgesRow}>
               <View style={styles.aiBadge}>
                 <Text style={styles.aiBadgeText}>AI Overview</Text>
@@ -165,7 +166,6 @@ export default function LearningScreen() {
               </View>
             </View>
 
-            {/* 📝 MAIN DEFINITION CARD */}
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <View style={styles.iconCircleBlue}>
@@ -178,7 +178,6 @@ export default function LearningScreen() {
               </Text>
             </View>
 
-            {/* 🔑 DYNAMIC KEY CONCEPTS */}
             <Text style={styles.sectionTitle}>Key Concepts</Text>
 
             {currentLesson.key_concepts?.map((concept, index) => {
@@ -196,7 +195,6 @@ export default function LearningScreen() {
               );
             })}
 
-            {/* ℹ️ AI DISCLAIMER NOTE */}
             <View style={styles.disclaimerBox}>
               <Ionicons name="star-outline" size={20} color="#3B82F6" style={{ marginTop: 2, marginRight: 10 }} />
               <Text style={styles.disclaimerText}>
@@ -209,40 +207,29 @@ export default function LearningScreen() {
             <Text style={styles.bodyText}>{currentLesson.full_module_text}</Text>
           </View>
         )}
-
-        {/* 🚀 START ACTIVITY BUTTON */}
-          <TouchableOpacity 
-            style={styles.primaryButton} 
-            activeOpacity={0.8}
-            onPress={() => {
-              router.push({
-                pathname: '/activity' as any, // 🟢 Add "as any" right here
-                params: { lessonData: JSON.stringify(currentLesson) }
-              });
-            }}
-          >
-            <Text style={styles.primaryButtonText}>Start Activity</Text>
-          </TouchableOpacity>
-        
       </ScrollView>
+
+      {/* 🟢 3. Pinned Footer for Start Activity Button so it never gets cut off */}
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          activeOpacity={0.8}
+          onPress={() => {
+            router.push({
+              pathname: '/activity' as any,
+              params: { lessonData: JSON.stringify(currentLesson) }
+            });
+          }}
+        >
+          <Text style={styles.primaryButtonText}>Start Activity</Text>
+        </TouchableOpacity>
+      </View>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Inside styles in learning.tsx:
-tabButton: {
-  flexDirection: 'row',          // Ensures the icon and text sit side-by-side
-  alignItems: 'center',
-  justifyContent: 'center',
-  paddingVertical: 10,
-  paddingHorizontal: 16,
-  borderRadius: 14,
-  gap: 8,                         // Separates the (i) icon from "AI-Generated Overview"
-},
-tabIcon: {
-  marginRight: 6,                 // Fallback spacing for older React Native layouts
-},
   container: { flex: 1, backgroundColor: '#F3F4F6' },
   header: { backgroundColor: '#2563EB', paddingHorizontal: 20, paddingBottom: 15 },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 20 },
@@ -256,25 +243,12 @@ tabIcon: {
   progressBarFill: { height: '100%', backgroundColor: '#FFF', borderRadius: 3 },
   progressLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   progressLabelText: { color: '#93C5FD', fontSize: 12 },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 20 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 10 },
-  toggleBtn: {
-    flex: 1, // 🟢 Forces the button to take exactly half the space
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8, // 🟢 Slightly smaller padding to fit the text
-    borderRadius: 8,
-  },
+  toggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 8, borderRadius: 8 },
   toggleBtnActive: { backgroundColor: '#2563EB', borderColor: '#2563EB', elevation: 2, shadowColor: '#2563EB', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   toggleBtnInactive: { backgroundColor: '#FFF', borderColor: '#E5E7EB' },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
-    flexShrink: 1, // 🟢 Prevents the text from pushing the icon out of bounds
-  },
+  toggleText: { fontSize: 14, fontWeight: '600', marginLeft: 6, flexShrink: 1 },
   toggleTextActive: { color: '#FFF' },
   toggleTextInactive: { color: '#6B7280' },
   badgesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
@@ -292,8 +266,10 @@ tabIcon: {
   conceptIcon: { marginRight: 12 },
   disclaimerBox: { flexDirection: 'row', backgroundColor: '#DBEAFE', padding: 16, borderRadius: 12, marginTop: 5, marginBottom: 25 },
   disclaimerText: { flex: 1, color: '#1D4ED8', fontSize: 13, lineHeight: 20 },
-  primaryButton: { backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 10 },
-  primaryButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-  fullModuleContainer: { paddingVertical: 20 }
-  
+  fullModuleContainer: { paddingVertical: 20 },
+
+  // 🟢 Fixed Footer Styles
+  footer: { padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  primaryButton: { backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  primaryButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
 });

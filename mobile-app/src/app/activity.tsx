@@ -8,13 +8,13 @@ import { supabase } from '../lib/supabase';
 export default function ActivityScreen() {
   const { lessonData, subject, lessonIndex, totalLessons } = useLocalSearchParams();  const [lesson, setLesson] = useState<any>(null);
   const [activity, setActivity] = useState<any>(null);
+  const [nextLesson, setNextLesson] = useState<any>(null);
+  const [subjectName, setSubjectName] = useState<string>('');
 
-  // Universal Game State
   const [userAnswer, setUserAnswer] = useState<string>('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
 
-  // Specific State for Matching Game
   const [matchedPairs, setMatchedPairs] = useState<Record<string, string>>({});
   const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
 
@@ -32,32 +32,40 @@ export default function ActivityScreen() {
     }
   }, [lessonData]);
 
+<<<<<<< HEAD
   // Robust answer validator that handles letters (A/B/C/D), numbers, and full text
   // Ultra-forgiving answer validator
+=======
+>>>>>>> ef73679 (Update server.js for Render deployment)
   const isAnswerCorrect = (userAns: string, act: any): boolean => {
     if (!act) return false;
     const rawCorrect = act.correct_answer ?? act.answer ?? act.correctAnswer ?? act.correct;
     if (rawCorrect === undefined || rawCorrect === null) return false;
 
+<<<<<<< HEAD
     // Helper: Preserves math symbols and punctuation while still ignoring "A." prefixes
     const superClean = (str: string) => 
       String(str || '')
         .replace(/^(option\s+[a-d]|option\s+\d|[a-d][.)\-:]|\d+[.)\-:])\s*/i, '') // Remove "A. "
         .trim() // Preserves math symbols like μ
+=======
+    const superClean = (str: string) =>
+      String(str || '')
+        .replace(/^(option\s+[a-d]|option\s+\d|[a-d][.)\-:]|\d+[.)\-:])\s*/i, '')
+        .replace(/[^a-z0-9]/gi, '')
+>>>>>>> ef73679 (Update server.js for Render deployment)
         .toLowerCase();
 
     const cleanUser = superClean(userAns);
     const cleanCorrect = superClean(rawCorrect);
 
-    // 1. Direct or partial match on the stripped text
     if (cleanUser && cleanCorrect && (cleanUser === cleanCorrect || cleanUser.includes(cleanCorrect) || cleanCorrect.includes(cleanUser))) {
       return true;
     }
 
-    // 2. Match by option letter or index (e.g. correct_answer is "B" or "2")
     if (Array.isArray(act.options)) {
       const letters = ['a', 'b', 'c', 'd', 'e'];
-      
+
       const userIdx = act.options.findIndex(
         (opt: string) => superClean(opt) === cleanUser
       );
@@ -114,7 +122,6 @@ export default function ActivityScreen() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        // 1. SAFELY UPDATE XP
         try {
           const { data: profile } = await supabase
             .from('students')
@@ -132,26 +139,36 @@ export default function ActivityScreen() {
           console.error("XP Update Failed:", err);
         }
 
-        // 2. SAFELY UPDATE LESSON PROGRESS
         try {
-          // Find the parent module that contains this specific lesson
-          const { data: allModules } = await supabase.from('ai_lessons').select('id, progress, parsed_content');
-          const parentMod = allModules?.find(m => 
-            m.parsed_content?.lessons?.some((l: any) => l.lesson_title === lesson?.lesson_title)
+          const { data: allModules } = await supabase.from('ai_lessons').select('id, progress, parsed_content, title');
+
+          const currentTitle = lesson?.lesson_title || lesson?.title;
+
+          const parentMod = allModules?.find((m: any) =>
+            m.parsed_content?.lessons?.some((l: any) => (l.lesson_title || l.title) === currentTitle)
           );
 
           if (parentMod) {
-             const totalLessonsInModule = parentMod.parsed_content.lessons.length || 1;
+             if (parentMod.title) {
+               setSubjectName(parentMod.title);
+             }
+
+             const lessonsArray = parentMod.parsed_content.lessons;
+             const totalLessonsInModule = lessonsArray.length || 1;
              const progressIncrement = Math.round(100 / totalLessonsInModule);
              const newProgress = Math.min(100, (parentMod.progress || 0) + progressIncrement);
-             
+
              await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', parentMod.id);
+
+             const currentIndex = lessonsArray.findIndex((l: any) => (l.lesson_title || l.title) === currentTitle);
+             if (currentIndex !== -1 && currentIndex + 1 < lessonsArray.length) {
+               setNextLesson(lessonsArray[currentIndex + 1]);
+             }
           }
         } catch (err) {
           console.error("Progress Update Failed:", err);
         }
 
-        // 3. SAFELY INSERT NOTIFICATION
         try {
           await supabase.from('notifications').insert({
             student_id: user.id,
@@ -166,6 +183,7 @@ export default function ActivityScreen() {
   };
 
   const handleContinue = () => {
+<<<<<<< HEAD
     try {
       const currentIdx = parseInt(lessonIndex as string, 10) || 0;
       const total = parseInt(totalLessons as string, 10) || 1;
@@ -188,10 +206,28 @@ export default function ActivityScreen() {
       console.error("Routing error:", error);
       // Emergency escape hatch if math fails
       router.replace('/'); 
+=======
+    if (nextLesson) {
+      router.replace({
+        pathname: '/learning',
+        params: { lessonData: JSON.stringify(nextLesson) }
+      });
+    } else {
+      // 🟢 Force the app to pop exactly 2 screens backward (Activity -> Learning -> Lesson List)
+      // This permanently removes the activity from your back-button history.
+      try {
+        // @ts-ignore - Supported in newer Expo Router versions
+        router.dismiss(2);
+      } catch (e) {
+        // Fallback for older router versions
+        router.replace({
+          pathname: '/lesson',
+          params: { subject: subjectName || 'Course Modules' }
+        });
+      }
+>>>>>>> ef73679 (Update server.js for Render deployment)
     }
   };
-
-  // --- RENDER HELPERS ---
 
   const renderMultipleChoice = () => (
     <View style={styles.optionsContainer}>
@@ -377,7 +413,6 @@ export default function ActivityScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
-      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="close" size={28} color="#333" />
@@ -387,21 +422,18 @@ export default function ActivityScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* PROGRESS PILL */}
         <View style={styles.badgeContainer}>
           <Text style={styles.badgeText}>
             {activity.activity_type ? activity.activity_type.replace(/_/g, ' ').toUpperCase() : 'ACTIVITY'}
           </Text>
         </View>
 
-        {/* PROMPT */}
         <Text style={styles.promptText}>
           {activity.activity_type === 'drag_and_drop'
             ? 'Complete the sentence:'
             : activity.question_prompt}
         </Text>
 
-        {/* ACTIVITY MECHANICS */}
         <View style={styles.gameBoard}>
           {activity.activity_type === 'multiple_choice' && renderMultipleChoice()}
           {activity.activity_type === 'true_false' && renderTrueFalse()}
@@ -410,7 +442,6 @@ export default function ActivityScreen() {
           {activity.activity_type === 'matching' && renderMatching()}
         </View>
 
-        {/* FEEDBACK BANNER */}
         {isSubmitted && (
           <View style={[styles.feedbackBanner, isCorrect ? styles.feedbackCorrect : styles.feedbackWrong]}>
             <Ionicons
@@ -432,7 +463,6 @@ export default function ActivityScreen() {
         )}
       </ScrollView>
 
-      {/* FOOTER ACTIONS */}
       <View style={styles.footer}>
         {!isSubmitted ? (
           <TouchableOpacity
@@ -464,115 +494,47 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#fcfaf8' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8' },
   loadingText: { fontSize: 16, color: '#666' },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 15,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15 },
   backButton: { padding: 5, marginLeft: -5 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#382314' },
-
   scrollContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 },
-
-  badgeContainer: {
-    backgroundColor: '#e0e8f9',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
+  badgeContainer: { backgroundColor: '#e0e8f9', alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginBottom: 16 },
   badgeText: { color: '#2e64e5', fontSize: 12, fontWeight: 'bold' },
-
   promptText: { fontSize: 20, fontWeight: 'bold', color: '#382314', marginBottom: 24, lineHeight: 28 },
-
   gameBoard: { marginBottom: 24 },
-
   optionsContainer: { gap: 12 },
-  optionCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: '#e0d8d0',
-    borderRadius: 16,
-    padding: 18,
-  },
+  optionCard: { backgroundColor: '#ffffff', borderWidth: 2, borderColor: '#e0d8d0', borderRadius: 16, padding: 18 },
   optionCardSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
   optionCardCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9' },
   optionCardWrong: { borderColor: '#f44336', backgroundColor: '#ffebee' },
-
   optionText: { fontSize: 16, color: '#333', fontWeight: '500', lineHeight: 22 },
   optionTextSelected: { color: '#2e64e5', fontWeight: 'bold' },
   optionTextCorrect: { color: '#2e7d32', fontWeight: 'bold' },
-
   inputContainer: { width: '100%' },
-  textInput: {
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: '#e0d8d0',
-    borderRadius: 16,
-    padding: 20,
-    fontSize: 18,
-    color: '#333',
-  },
+  textInput: { backgroundColor: '#ffffff', borderWidth: 2, borderColor: '#e0d8d0', borderRadius: 16, padding: 20, fontSize: 18, color: '#333' },
   inputCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9' },
   inputWrong: { borderColor: '#f44336', backgroundColor: '#ffebee' },
-
-  sentenceContainer: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e0d8d0',
-    marginBottom: 20,
-  },
+  sentenceContainer: { backgroundColor: '#ffffff', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#e0d8d0', marginBottom: 20 },
   sentenceText: { fontSize: 18, lineHeight: 28, color: '#333' },
   blankSpace: { color: '#999', textDecorationLine: 'underline' },
   filledBlank: { color: '#2e64e5', fontWeight: 'bold', textDecorationLine: 'none' },
   instructionText: { fontSize: 14, color: '#666', marginBottom: 12, fontStyle: 'italic' },
-
   wordBank: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  wordChip: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d0ddff',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 2 },
-  },
+  wordChip: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d0ddff', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
   wordChipSelected: { backgroundColor: '#2e64e5', borderColor: '#2e64e5' },
   wordChipText: { fontSize: 16, color: '#2e64e5', fontWeight: '600' },
   wordChipTextSelected: { color: '#ffffff' },
-
   matchingContainer: { flex: 1 },
   matchingColumns: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   column: { flex: 1, gap: 10 },
   columnHeader: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5, textAlign: 'center' },
-  matchCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: '#e0d8d0',
-    borderRadius: 12,
-    padding: 15,
-    minHeight: 70,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  matchCard: { backgroundColor: '#ffffff', borderWidth: 2, borderColor: '#e0d8d0', borderRadius: 12, padding: 15, minHeight: 70, justifyContent: 'center', alignItems: 'center' },
   matchCardSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
   matchCardMatched: { borderColor: '#4caf50', backgroundColor: '#e8f5e9', opacity: 0.8 },
   matchText: { fontSize: 14, color: '#333', textAlign: 'center', fontWeight: '500' },
   matchTextSelected: { color: '#2e64e5', fontWeight: 'bold' },
   resetButton: { marginTop: 20, padding: 10, alignSelf: 'center' },
   resetButtonText: { color: '#f44336', fontWeight: 'bold' },
-
   feedbackBanner: { flexDirection: 'row', alignItems: 'flex-start', padding: 15, borderRadius: 12, marginTop: 10 },
   feedbackCorrect: { backgroundColor: '#d4edda', borderWidth: 1, borderColor: '#c3e6cb' },
   feedbackWrong: { backgroundColor: '#f8d7da', borderWidth: 1, borderColor: '#f5c6cb' },
@@ -580,11 +542,10 @@ const styles = StyleSheet.create({
   feedbackTextCorrect: { color: '#155724' },
   feedbackTextWrong: { color: '#721c24' },
   feedbackSubtitle: { fontSize: 14, color: '#721c24' },
-
   footer: { padding: 20, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#e0d8d0' },
   submitButton: { backgroundColor: '#2e64e5', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
   submitButtonDisabled: { backgroundColor: '#a0b9c1' },
   continueButton: { backgroundColor: '#4caf50' },
   retryButton: { backgroundColor: '#f44336' },
-  submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
+  submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' }
 });

@@ -4,12 +4,40 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase'; 
+import { API_BASE_URL } from '../lib/config';
+
+// ---------- Subject grouping helpers ----------
+const SUBJECT_COLORS = ['#5480e5', '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
+const FALLBACK_ICONS = ['bulb', 'earth', 'library', 'school', 'rocket', 'extension-puzzle'];
+
+// "Cookery & Food Safety " and "cookery  &  food safety" become the same subject
+const getSubjectKey = (title: string) =>
+  (title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+// Stable number from text, so the same subject always gets the same color/icon
+const hashString = (text: string) => {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+// Icon is chosen from the SUBJECT NAME, never from the row position
+const getSubjectIcon = (name: string) => {
+  const n = name.toLowerCase();
+  if (/cook|food|kitchen|culinary|bak(e|ing)|nutrition/.test(n)) return 'restaurant';
+  if (/math|numer|algebra|geometry|arithmetic/.test(n)) return 'calculator';
+  if (/english|filipino|communicat|language|literacy|reading|writing/.test(n)) return 'chatbubbles';
+  if (/science|biolog|chemi|physics/.test(n)) return 'flask';
+  if (/social|history|civic|govern|geograph/.test(n)) return 'earth';
+  if (/digital|computer|ict|technolog/.test(n)) return 'laptop';
+  return FALLBACK_ICONS[hashString(n) % FALLBACK_ICONS.length];
+};
 
 export default function LearnScreen() {
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
   const [selectedToolRoute, setSelectedToolRoute] = useState('');
   const [expandedSubjectId, setExpandedSubjectId] = useState<any | null>(null);
-  
+
   const [recommendation, setRecommendation] = useState<{ target_module: string, rationale: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -26,14 +54,14 @@ export default function LearnScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const response = await fetch(`https://glorious-happiness-x5955j7qpxqgfp4p9-3000.app.github.dev/api/ai-recommendation/${user.id}`);
-      
+      const response = await fetch(`${API_BASE_URL}/api/ai-recommendation/${user.id}`);
+
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
         setRecommendation(data);
       } else {
-        console.error("Backend returned HTML instead of JSON. Check if your Codespace port 3000 is Public.");
+        console.error(`AI recommendation: expected JSON from ${API_BASE_URL} but got HTTP ${response.status} (${contentType ?? "no content-type"}).`);
         setRecommendation(null);
       }
     } catch (error) {
@@ -52,25 +80,41 @@ export default function LearnScreen() {
       if (error) throw error;
 
       if (data) {
-        const colors = ['#5480e5', '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
-        const icons = ['restaurant', 'chatbubbles', 'calculator', 'bulb', 'earth', 'library'];
-        
-        const dynamicSubjects = data.map((row, index) => {
-          let extractedModules: string[] = [];
-          if (row.parsed_content && Array.isArray(row.parsed_content.lessons)) {
-            extractedModules = row.parsed_content.lessons.map((lesson: any) => lesson.lesson_title || lesson.title || lesson.topic);
-          }
-          
-          const cleanModules = extractedModules.filter(Boolean);
+        // One entry per SUBJECT (rows are weeks/modules, so group them)
+        const grouped = new Map<string, { id: string; name: string; icon: string; color: string; modules: string[] }>();
 
-          return {
-            id: row.id || index,
-            name: row.title, 
-            icon: icons[index % icons.length], 
-            color: colors[index % colors.length],
-            modules: cleanModules.length > 0 ? cleanModules : [row.title] 
-          };
+        data.forEach((row: any) => {
+          const name = (row.title || '').trim() || 'Untitled Subject';
+          const key = getSubjectKey(name);
+
+          const lessonTitles: string[] =
+            row.parsed_content && Array.isArray(row.parsed_content.lessons)
+              ? row.parsed_content.lessons
+                  .map((lesson: any) => lesson.lesson_title || lesson.title || lesson.topic)
+                  .filter(Boolean)
+              : [];
+
+          const existing = grouped.get(key);
+          if (existing) {
+            // Same subject, another week: merge its lessons into the one card
+            lessonTitles.forEach((t) => {
+              if (!existing.modules.includes(t)) existing.modules.push(t);
+            });
+          } else {
+            grouped.set(key, {
+              id: key,
+              name,
+              icon: getSubjectIcon(name),
+              color: SUBJECT_COLORS[hashString(key) % SUBJECT_COLORS.length],
+              modules: [...lessonTitles],
+            });
+          }
         });
+
+        const dynamicSubjects = Array.from(grouped.values()).map((subject) => ({
+          ...subject,
+          modules: subject.modules.length > 0 ? subject.modules : [subject.name],
+        }));
 
         setSubjects(dynamicSubjects);
       }

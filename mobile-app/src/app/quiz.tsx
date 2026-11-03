@@ -1,10 +1,28 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Dimensions, Alert } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { API_BASE_URL } from '../lib/config';
 import { Ionicons } from '@expo/vector-icons';
 import { usePreventScreenCapture } from 'expo-screen-capture';
+
+type QuizQuestion = {
+  question: string;
+  options: string[];
+  correct_answer: string;
+};
+
+// Gemini can take a while, but we should never hang forever on a dead server
+const QUIZ_TIMEOUT_MS = 45000;
+
+// Drops malformed questions instead of crashing on them
+const isValidQuestion = (q: any): q is QuizQuestion =>
+  !!q &&
+  typeof q.question === 'string' &&
+  Array.isArray(q.options) &&
+  q.options.length >= 2 &&
+  typeof q.correct_answer === 'string';
 
 export default function QuizScreen() {
   // 🟢 Instantly blocks screenshots and screen recordings on this screen
@@ -13,21 +31,28 @@ export default function QuizScreen() {
   const { subject } = useLocalSearchParams<{ subject: string }>();
   const moduleTitle = subject || 'Cookery & Food Safety';
 
-  const [questions, setQuestions] = useState<any[]>([]);
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [quizComplete, setQuizComplete] = useState(false);
 
+  // 🔴 Error state: shown instead of crashing when the quiz can't be loaded
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(true);
+
   // Grading State
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [score, setScore] = useState(0);
 
-  useEffect(() => {
-    fetchUniqueQuiz();
-  }, []);
+  const fetchUniqueQuiz = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setCanRetry(true);
 
-  const fetchUniqueQuiz = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), QUIZ_TIMEOUT_MS);
+
     try {
       // Check if they already took it first to prevent wasting API calls
       const { data: { user } } = await supabase.auth.getUser();
@@ -37,75 +62,107 @@ export default function QuizScreen() {
           .select('id')
           .eq('student_id', user.id)
           .eq('module_title', moduleTitle)
-          .single();
+          .maybeSingle();
 
         if (existingGrade) {
-          Alert.alert("Already Completed", "You have already recorded a grade for this assessment.");
-          router.back();
+          setQuestions([]);
+          setCanRetry(false);
+          setErrorMessage('You have already recorded a grade for this assessment.');
           return;
         }
       }
 
       // Fetch the randomized Gemini quiz from your Node.js backend
-      const response = await fetch(`https://glorious-happiness-x5955j7qpxqgfp4p9-3000.app.github.dev/api/generate-quiz?moduleTitle=${encodeURIComponent(moduleTitle)}`);
-      
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.indexOf("application/json") !== -1) {
-        const generatedQuestions = await response.json();
-        setQuestions(generatedQuestions);
-      } else {
-        throw new Error("Backend returned HTML. Port 3000 might be private.");
+      const response = await fetch(
+        `${API_BASE_URL}/api/generate-quiz?moduleTitle=${encodeURIComponent(moduleTitle)}`,
+        { signal: controller.signal, headers: { Accept: 'application/json' } }
+      );
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!response.ok || !contentType.includes('application/json')) {
+        const preview = (await response.text()).slice(0, 120);
+        console.error(`Quiz backend replied ${response.status} (${contentType}): ${preview}`);
+        throw new Error('BACKEND_UNAVAILABLE');
       }
-    } catch (error) {
-      console.error("Quiz Fetch Error:", error);
-      Alert.alert("Error", "Could not generate assessment. Please try again.");
-      router.back();
+
+      const data = await response.json();
+      const validQuestions: QuizQuestion[] = Array.isArray(data) ? data.filter(isValidQuestion) : [];
+      if (validQuestions.length === 0) throw new Error('BAD_QUIZ_DATA');
+
+      setQuestions(validQuestions);
+    } catch (error: any) {
+      console.error('Quiz Fetch Error:', error);
+      setQuestions([]);
+      setErrorMessage(
+        error?.name === 'AbortError'
+          ? 'The server took too long to respond. Please try again.'
+          : "We couldn't load your assessment. Check your connection and try again."
+      );
     } finally {
+      clearTimeout(timeoutId);
       setIsLoading(false);
+    }
+  }, [moduleTitle]);
+
+  useEffect(() => {
+    fetchUniqueQuiz();
+  }, [fetchUniqueQuiz]);
+
+  // Saves the permanent grade. Only shows the result screen if it really saved.
+  const saveGrade = async (finalScore: number) => {
+    setIsSubmitting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not signed in');
+
+      const { error: insertError } = await supabase
+        .from('quiz_grades')
+        .insert({
+          student_id: user.id,
+          module_title: moduleTitle,
+          score: finalScore,
+          total_items: questions.length,
+        });
+
+      if (insertError) {
+        // 23505 = unique violation: a grade already exists for this module
+        if ((insertError as any).code === '23505') {
+          Alert.alert('Already Completed', 'A grade is already recorded for this assessment.');
+          router.back();
+          return;
+        }
+        throw insertError;
+      }
+
+      setQuizComplete(true);
+    } catch (error) {
+      console.error('Grade Save Error:', error);
+      Alert.alert(
+        'Could not save your grade',
+        'Check your connection and try again. Your answers are kept.',
+        [{ text: 'Try Again', onPress: () => saveGrade(finalScore) }]
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleNext = async () => {
+  const handleNext = () => {
+    if (isSubmitting) return;
     const currentQ = questions[currentIndex];
-    
+    if (!currentQ) return;
+
     // Check answer silently (no immediate red/green feedback for formal assessments)
-    let currentScore = score;
-    if (selectedAnswer.trim().toLowerCase() === currentQ.correct_answer.trim().toLowerCase()) {
-      currentScore += 1;
-      setScore(currentScore);
-    }
+    const isCorrect =
+      selectedAnswer.trim().toLowerCase() === String(currentQ.correct_answer ?? '').trim().toLowerCase();
+    const newScore = score + (isCorrect ? 1 : 0);
+    setScore(newScore);
 
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
       setSelectedAnswer('');
     } else {
-      // Submit Final Grade
-      setIsSubmitting(true);
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { error: insertError } = await supabase
-            .from('quiz_grades')
-            .insert({ 
-              student_id: user.id, 
-              module_title: moduleTitle,
-              score: currentScore,
-              total_items: questions.length
-            });
-
-          if (insertError) {
-            console.error("Grade Save Error:", insertError);
-            Alert.alert("Database Error", "Could not save your grade. You may have already taken this.");
-            router.back();
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("Submission Error:", error);
-      } finally {
-        setIsSubmitting(false);
-        setQuizComplete(true);
-      }
+      saveGrade(newScore);
     }
   };
 
@@ -128,7 +185,7 @@ export default function QuizScreen() {
           <Ionicons name={passed ? "checkmark-circle" : "alert-circle"} size={80} color={passed ? "#4caf50" : "#f44336"} />
           <Text style={styles.successTitle}>Assessment Complete</Text>
           <Text style={styles.successMessage}>Your permanent grade has been recorded in the ALS system.</Text>
-          
+
           <View style={styles.rewardBox}>
             <Text style={styles.rewardLabel}>Final Score</Text>
             <Text style={[styles.rewardValue, { color: passed ? "#4caf50" : "#f44336" }]}>
@@ -144,13 +201,38 @@ export default function QuizScreen() {
     );
   }
 
-  // 🎮 QUIZ SCREEN
+  // 🔴 ERROR / EMPTY SCREEN (replaces the old crash on `currentQ.question`)
   const currentQ = questions[currentIndex];
+  if (errorMessage || !currentQ) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="cloud-offline-outline" size={64} color="#aaa" />
+          <Text style={styles.errorTitle}>Assessment unavailable</Text>
+          <Text style={styles.errorText}>
+            {errorMessage ?? "We couldn't load your assessment. Please try again."}
+          </Text>
+
+          {canRetry && (
+            <TouchableOpacity style={styles.returnButton} onPress={fetchUniqueQuiz}>
+              <Text style={styles.returnButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
+            <Text style={styles.backLinkText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // 🎮 QUIZ SCREEN
   const progressPercent = ((currentIndex + 1) / questions.length) * 100;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
-      
+
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
           Alert.alert("Abandon Assessment?", "If you leave now, you will score a 0 and cannot retake it.", [
@@ -170,7 +252,7 @@ export default function QuizScreen() {
         <Text style={styles.questionPrompt}>{currentQ.question}</Text>
 
         <View style={styles.optionsContainer}>
-          {currentQ.options?.map((opt: string, idx: number) => (
+          {currentQ.options.map((opt: string, idx: number) => (
             <TouchableOpacity
               key={idx}
               style={[
@@ -192,7 +274,7 @@ export default function QuizScreen() {
       </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.submitButton, !selectedAnswer && styles.submitButtonDisabled]}
           onPress={handleNext}
           disabled={!selectedAnswer || isSubmitting}
@@ -215,7 +297,13 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8', padding: 20 },
   loadingText: { marginTop: 20, fontSize: 16, color: '#333', fontWeight: 'bold', textAlign: 'center' },
   loadingSubtext: { marginTop: 8, fontSize: 13, color: '#f44336', fontWeight: '600' },
-  
+
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#fcfaf8' },
+  errorTitle: { fontSize: 24, fontWeight: '900', color: '#333', marginTop: 20, marginBottom: 10 },
+  errorText: { fontSize: 16, color: '#666', textAlign: 'center', lineHeight: 24, marginBottom: 30 },
+  backLink: { marginTop: 18, paddingVertical: 10, paddingHorizontal: 20 },
+  backLinkText: { fontSize: 16, fontWeight: 'bold', color: '#2e64e5' },
+
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
   closeButton: { paddingRight: 15 },
   progressBarBg: { flex: 1, height: 12, backgroundColor: '#e0e8f9', borderRadius: 6, overflow: 'hidden' },
@@ -235,7 +323,7 @@ const styles = StyleSheet.create({
   submitButton: { backgroundColor: '#2e64e5', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
   submitButtonDisabled: { backgroundColor: '#a5c0ff' },
   submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
-  
+
   successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#fcfaf8' },
   successTitle: { fontSize: 28, fontWeight: '900', color: '#333', marginTop: 20, marginBottom: 10 },
   successMessage: { fontSize: 16, color: '#666', textAlign: 'center', lineHeight: 24, marginBottom: 40 },

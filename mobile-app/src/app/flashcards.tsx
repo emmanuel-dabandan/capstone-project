@@ -3,12 +3,13 @@ import { StyleSheet, Text, View, TouchableOpacity, Animated, Dimensions, Activit
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE_URL } from '../lib/config'; // 🟢 Dynamically load the base URL
 
 const { width } = Dimensions.get('window');
 
 export default function FlashcardsScreen() {
   const { subject, module } = useLocalSearchParams<{ subject: string, module: string }>();
-  
+
   const [flashcardData, setFlashcardData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -19,14 +20,13 @@ export default function FlashcardsScreen() {
   useEffect(() => {
     const fetchFlashcards = async () => {
       try {
-        // 🟢 FIXED: Safely build the URL so ampersands and spaces don't break the GET request
-        const apiUrl = new URL('https://glorious-happiness-x5955j7qpxqgfp4p9-3000.app.github.dev/api/generate-flashcards');
+        // 🟢 Use API_BASE_URL to safely build the endpoint route
+        const apiUrl = new URL('/api/generate-flashcards', API_BASE_URL);
         apiUrl.searchParams.append('subjectTitle', subject || '');
         apiUrl.searchParams.append('moduleTitle', module || '');
 
         const response = await fetch(apiUrl.toString());
-        
-        // 🟢 FIXED: Check if the server actually returned JSON before parsing it
+
         const contentType = response.headers.get("content-type");
         if (!response.ok || !contentType || !contentType.includes("application/json")) {
            const textError = await response.text();
@@ -37,7 +37,7 @@ export default function FlashcardsScreen() {
         }
 
         const data = await response.json();
-        
+
         if (data.error) {
           console.warn("Module not ready:", data.error);
           setFlashcardData([]);
@@ -50,7 +50,7 @@ export default function FlashcardsScreen() {
         setIsLoading(false);
       }
     };
-    
+
     if (subject && module) {
       fetchFlashcards();
     } else {
@@ -126,12 +126,11 @@ export default function FlashcardsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      {/* 🟢 BULLETPROOF HEADER LAYOUT */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={28} color="#333" />
         </TouchableOpacity>
-        
+
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Flashcards</Text>
           <Text style={styles.headerSubtitle} numberOfLines={2} ellipsizeMode="tail">
@@ -149,7 +148,7 @@ export default function FlashcardsScreen() {
 
       <View style={styles.cardContainer}>
         <TouchableOpacity activeOpacity={0.9} onPress={flipCard} style={styles.cardTouchArea}>
-          
+
           <Animated.View style={[styles.card, frontAnimatedStyle]}>
             <View style={styles.cardInner}>
               <Ionicons name="bulb-outline" size={32} color="#2e64e5" style={styles.cardIcon} />
@@ -163,7 +162,7 @@ export default function FlashcardsScreen() {
               <Text style={styles.definitionText}>{card.definition}</Text>
             </View>
           </Animated.View>
-          
+
         </TouchableOpacity>
       </View>
 
@@ -181,24 +180,23 @@ export default function FlashcardsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fcfaf8' },
-  // 🟢 FIXED HEADER STYLES
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', // Perfectly centers the text container
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 15,
-    minHeight: 70, // Gives it enough breathing room
-    position: 'relative', 
+    minHeight: 70,
+    position: 'relative',
   },
-  backButton: { 
-    position: 'absolute', 
-    left: 15, 
-    zIndex: 10, // Keeps it clickable on top of the header
-    padding: 10, 
+  backButton: {
+    position: 'absolute',
+    left: 15,
+    zIndex: 10,
+    padding: 10,
   },
-  headerCenter: { 
-    alignItems: 'center', 
-    paddingHorizontal: 65, // Stops long text from bleeding into the back arrow
+  headerCenter: {
+    alignItems: 'center',
+    paddingHorizontal: 65,
   },
   headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', textAlign: 'center' },
   headerSubtitle: { fontSize: 13, color: '#666', textAlign: 'center', marginTop: 2, lineHeight: 18 },

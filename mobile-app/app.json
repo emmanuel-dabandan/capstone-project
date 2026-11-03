@@ -18,7 +18,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+<<<<<<< HEAD
       "package": "com.emmanueldabandan2004.mobileapp"
+=======
+      "package": "com.anonymous.mobileapp"
+>>>>>>> ef73679 (Update server.js for Render deployment)
     },
     "web": {
       "output": "static",
