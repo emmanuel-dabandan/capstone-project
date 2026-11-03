@@ -5,6 +5,7 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
+import { registerAssessmentRoutes } from './assessmentRoutes.js';
 
 dotenv.config();
 
@@ -239,6 +240,9 @@ app.post('/api/upload-lesson', upload.single('pdf'), async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// --- 🟢 QUIZ + PRACTICE ROUTES (see assessmentRoutes.js) ---
+registerAssessmentRoutes(app, { supabase, ai });
 
 // 🟢 Dynamically grab the port Render provides, or default to 3000 locally
 const PORT = process.env.PORT || 3000;
