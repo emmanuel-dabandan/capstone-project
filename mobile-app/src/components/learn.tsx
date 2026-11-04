@@ -1,27 +1,33 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase'; 
+import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
+import {
+  DownloadedStudyPack,
+  getAllDownloadedPacks,
+  getActiveStudyPack,
+  downloadLessonStudyPack,
+  setActiveStudyPackId,
+  removeDownloadedPack,
+  makePackId,
+} from '../lib/offlineStudyPacks';
 
 // ---------- Subject grouping helpers ----------
 const SUBJECT_COLORS = ['#5480e5', '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
 const FALLBACK_ICONS = ['bulb', 'earth', 'library', 'school', 'rocket', 'extension-puzzle'];
 
-// "Cookery & Food Safety " and "cookery  &  food safety" become the same subject
 const getSubjectKey = (title: string) =>
   (title || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
-// Stable number from text, so the same subject always gets the same color/icon
 const hashString = (text: string) => {
   let h = 0;
   for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
   return Math.abs(h);
 };
 
-// Icon is chosen from the SUBJECT NAME, never from the row position
 const getSubjectIcon = (name: string) => {
   const n = name.toLowerCase();
   if (/cook|food|kitchen|culinary|bak(e|ing)|nutrition/.test(n)) return 'restaurant';
@@ -41,12 +47,21 @@ export default function LearnScreen() {
   const [recommendation, setRecommendation] = useState<{ target_module: string, rationale: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Dynamic subjects state populated directly from Supabase
   const [subjects, setSubjects] = useState<any[]>([]);
+
+  // --- Offline Pack States ---
+  const [downloadModalVisible, setDownloadModalVisible] = useState(false);
+  const [availableLessons, setAvailableLessons] = useState<
+    { id: string; subjectTitle: string; moduleTitle: string; lessonData: any }[]
+  >([]);
+  const [downloadedPacks, setDownloadedPacks] = useState<Record<string, DownloadedStudyPack>>({});
+  const [activePackId, setActivePackId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAIRecommendation();
     fetchDatabaseModules();
+    loadDownloadableLessons();
   }, []);
 
   const fetchAIRecommendation = async () => {
@@ -61,7 +76,7 @@ export default function LearnScreen() {
         const data = await response.json();
         setRecommendation(data);
       } else {
-        console.error(`AI recommendation: expected JSON from ${API_BASE_URL} but got HTTP ${response.status} (${contentType ?? "no content-type"}).`);
+        console.error(`AI recommendation: expected JSON from ${API_BASE_URL} but got HTTP ${response.status}.`);
         setRecommendation(null);
       }
     } catch (error) {
@@ -80,7 +95,6 @@ export default function LearnScreen() {
       if (error) throw error;
 
       if (data) {
-        // One entry per SUBJECT (rows are weeks/modules, so group them)
         const grouped = new Map<string, { id: string; name: string; icon: string; color: string; modules: string[] }>();
 
         data.forEach((row: any) => {
@@ -96,7 +110,6 @@ export default function LearnScreen() {
 
           const existing = grouped.get(key);
           if (existing) {
-            // Same subject, another week: merge its lessons into the one card
             lessonTitles.forEach((t) => {
               if (!existing.modules.includes(t)) existing.modules.push(t);
             });
@@ -123,26 +136,105 @@ export default function LearnScreen() {
     }
   };
 
+  const loadDownloadableLessons = async () => {
+    const packs = await getAllDownloadedPacks();
+    setDownloadedPacks(packs);
+    const active = await getActiveStudyPack();
+    setActivePackId(active?.id || null);
+
+    const { data } = await supabase
+      .from('ai_lessons')
+      .select('title, parsed_content');
+
+    if (data) {
+      const list: { id: string; subjectTitle: string; moduleTitle: string; lessonData: any }[] = [];
+      data.forEach((row: any) => {
+        const subjectTitle = row.title || 'Uncategorized';
+        const lessons = row.parsed_content?.lessons || [];
+        lessons.forEach((lesson: any) => {
+          const moduleTitle = lesson.lesson_title || lesson.title || 'Lesson';
+          const id = makePackId(subjectTitle, moduleTitle);
+          list.push({ id, subjectTitle, moduleTitle, lessonData: lesson });
+        });
+      });
+      setAvailableLessons(list);
+    }
+  };
+
+  const handleDownloadLesson = async (item: {
+    id: string;
+    subjectTitle: string;
+    moduleTitle: string;
+    lessonData: any;
+  }) => {
+    try {
+      setDownloadingId(item.id);
+      await downloadLessonStudyPack({
+        subjectTitle: item.subjectTitle,
+        moduleTitle: item.moduleTitle,
+        lessonData: item.lessonData,
+      });
+      const updated = await getAllDownloadedPacks();
+      setDownloadedPacks(updated);
+      setActivePackId(item.id);
+      Alert.alert(
+        'Downloaded for Offline!',
+        `"${item.moduleTitle}" (with 10 Flashcards & 20 Practice Questions) is now saved and connected to your Flashcards and Practice Quiz.`
+      );
+    } catch (err: any) {
+      Alert.alert('Download Failed', err.message || 'Could not download study pack.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleSelectActivePack = async (packId: string) => {
+    await setActiveStudyPackId(packId);
+    setActivePackId(packId);
+  };
+
+  const handleDeletePack = async (packId: string) => {
+    await removeDownloadedPack(packId);
+    const updated = await getAllDownloadedPacks();
+    setDownloadedPacks(updated);
+    const active = await getActiveStudyPack();
+    setActivePackId(active?.id || null);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.mainBackground}>
-        
+
         <View style={styles.topSection}>
           <Text style={styles.screenTitle}>Learn</Text>
+          <TouchableOpacity
+            style={styles.headerDownloadBtn}
+            onPress={() => {
+              loadDownloadableLessons();
+              setDownloadModalVisible(true);
+            }}
+          >
+            <Ionicons name="cloud-download-outline" size={24} color="#2e64e5" />
+            {Object.keys(downloadedPacks).length > 0 && (
+              <View style={styles.badgeDownload}>
+                <Text style={styles.badgeDownloadText}>{Object.keys(downloadedPacks).length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
 
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent} 
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled={true}
-        >          
+        >
           {/* AI Recommended Focus */}
           <View style={styles.aiCardContainer}>
             <Text style={styles.sectionSubtitleWhite}>Targeted review based on your latest assessment</Text>
-            
-            <TouchableOpacity 
-              style={styles.aiCard} 
+
+            <TouchableOpacity
+              style={styles.aiCard}
               activeOpacity={0.8}
               disabled={isLoading || !recommendation}
               onPress={() => {
@@ -185,12 +277,12 @@ export default function LearnScreen() {
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
               {subjects.map((subject) => (
-                <TouchableOpacity 
-                  key={subject.id} 
-                  style={styles.subjectCardWide} 
+                <TouchableOpacity
+                  key={subject.id}
+                  style={styles.subjectCardWide}
                   activeOpacity={0.8}
                   onPress={() => {
                     router.push({
@@ -212,9 +304,9 @@ export default function LearnScreen() {
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitlePad}>Quizzes</Text>
             <Text style={styles.sectionSubtitlePad}>Check in on your pending evaluations</Text>
-            
-            <TouchableOpacity 
-              style={styles.actionCard} 
+
+            <TouchableOpacity
+              style={styles.actionCard}
               activeOpacity={0.8}
               onPress={() => {
                 const currentSubject = subjects[0]?.name || 'Cookery & Food Safety';
@@ -243,10 +335,10 @@ export default function LearnScreen() {
           {/* Study Tools & Library */}
           <View style={styles.sectionContainer}>
             <Text style={[styles.sectionTitlePad, { marginBottom: 15 }]}>My Library & Tools</Text>
-            
+
             <View style={styles.toolsGrid}>
-              <TouchableOpacity 
-                style={styles.toolCard} 
+              <TouchableOpacity
+                style={styles.toolCard}
                 activeOpacity={0.8}
                 onPress={() => {
                   setSelectedToolRoute('/flashcards');
@@ -257,8 +349,8 @@ export default function LearnScreen() {
                 <Text style={styles.toolText}>Flashcards</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={styles.toolCard} 
+              <TouchableOpacity
+                style={styles.toolCard}
                 activeOpacity={0.8}
                 onPress={() => {
                   setSelectedToolRoute('/practice');
@@ -274,12 +366,21 @@ export default function LearnScreen() {
                 <Text style={styles.toolText}>Saved</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.toolCard}
+                activeOpacity={0.8}
+                onPress={() => {
+                  loadDownloadableLessons();
+                  setDownloadModalVisible(true);
+                }}
+              >
                 <Ionicons name="download-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
                 <Text style={styles.toolText}>Downloads</Text>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>3</Text>
-                </View>
+                {Object.keys(downloadedPacks).length > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{Object.keys(downloadedPacks).length}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -288,7 +389,7 @@ export default function LearnScreen() {
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitlePad}>Quick References</Text>
             <Text style={styles.sectionSubtitlePad}>Hands-on guides for practical application</Text>
-            
+
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
               <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
                 <View style={styles.referenceIconWrapper}>
@@ -322,36 +423,36 @@ export default function LearnScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select a Module</Text>
             <Text style={styles.modalSubtitle}>Expand a subject to choose your specific review material.</Text>
-            
+
             <ScrollView style={{ maxHeight: 350 }}>
               {subjects.map((subject) => (
                 <View key={subject.id}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.subjectOption}
                     onPress={() => setExpandedSubjectId(expandedSubjectId === subject.id ? null : subject.id)}
                   >
                     <Text style={[styles.subjectOptionText, expandedSubjectId === subject.id && { color: subject.color }]}>
                       {subject.name}
                     </Text>
-                    <Ionicons 
-                      name={expandedSubjectId === subject.id ? "chevron-down" : "chevron-forward"} 
-                      size={20} 
-                      color={expandedSubjectId === subject.id ? subject.color : "#aaa"} 
+                    <Ionicons
+                      name={expandedSubjectId === subject.id ? "chevron-down" : "chevron-forward"}
+                      size={20}
+                      color={expandedSubjectId === subject.id ? subject.color : "#aaa"}
                     />
                   </TouchableOpacity>
 
                   {expandedSubjectId === subject.id && (
                     <View style={styles.modulesContainer}>
                       {subject.modules.map((moduleName: string, index: number) => (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           key={index}
                           style={styles.moduleOption}
                           onPress={() => {
                             setShowSubjectPicker(false);
                             setExpandedSubjectId(null);
-                            router.push({ 
-                              pathname: selectedToolRoute, 
-                              params: { subject: subject.name, module: moduleName } 
+                            router.push({
+                              pathname: selectedToolRoute,
+                              params: { subject: subject.name, module: moduleName }
                             } as any);
                           }}
                         >
@@ -365,8 +466,8 @@ export default function LearnScreen() {
               ))}
             </ScrollView>
 
-            <TouchableOpacity 
-              style={styles.cancelButton} 
+            <TouchableOpacity
+              style={styles.cancelButton}
               onPress={() => {
                 setShowSubjectPicker(false);
                 setExpandedSubjectId(null);
@@ -378,15 +479,92 @@ export default function LearnScreen() {
         </View>
       </Modal>
 
+      {/* Download Pack Modal */}
+      <Modal
+        visible={downloadModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setDownloadModalVisible(false)}
+      >
+        <View style={styles.modalOverlayDown}>
+          <View style={styles.modalCardDown}>
+            <View style={styles.modalHeaderDown}>
+              <View>
+                <Text style={styles.modalTitleDown}>Download Lessons</Text>
+                <Text style={styles.modalSubtitleDown}>
+                  Includes 10 Flashcards + 20 Practice Quiz items
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setDownloadModalVisible(false)}>
+                <Ionicons name="close" size={26} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={availableLessons}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                const isDownloaded = !!downloadedPacks[item.id];
+                const isActive = activePackId === item.id;
+                const isDownloading = downloadingId === item.id;
+
+                return (
+                  <View style={[styles.lessonRowDown, isActive && styles.lessonRowActiveDown]}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={styles.subjectLabelDown}>{item.subjectTitle}</Text>
+                      <Text style={styles.moduleLabelDown}>{item.moduleTitle}</Text>
+                      {isDownloaded && (
+                        <Text style={styles.packMetaDown}>
+                          {isActive ? '★ Connected to Flashcards & Practice' : 'Saved offline (10 cards • 20 quiz items)'}
+                        </Text>
+                      )}
+                    </View>
+
+                    {isDownloading ? (
+                      <ActivityIndicator size="small" color="#2e64e5" />
+                    ) : isDownloaded ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {!isActive && (
+                          <TouchableOpacity
+                            style={styles.useBtnDown}
+                            onPress={() => handleSelectActivePack(item.id)}
+                          >
+                            <Text style={styles.useBtnTextDown}>Connect</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          style={styles.deleteBtnDown}
+                          onPress={() => handleDeletePack(item.id)}
+                        >
+                          <Ionicons name="trash-outline" size={20} color="#e53935" />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.downloadBtnDown}
+                        onPress={() => handleDownloadLesson(item)}
+                      >
+                        <Ionicons name="download-outline" size={18} color="#fff" />
+                        <Text style={styles.downloadBtnTextDown}>Download</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#2e64e5' }, 
+  safeArea: { flex: 1, backgroundColor: '#2e64e5' },
   mainBackground: { flex: 1, backgroundColor: '#fcfaf8' },
-  
-  topSection: { backgroundColor: '#2e64e5', paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, paddingTop: 10, zIndex: 1, alignItems: 'center' },
+
+  topSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#2e64e5', paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, paddingTop: 10, zIndex: 1 },
   screenTitle: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' },
   scrollContent: { paddingBottom: 100, paddingTop: 10 },
   sectionContainer: { marginBottom: 35 },
@@ -395,15 +573,15 @@ const styles = StyleSheet.create({
   sectionTitlePad: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20 },
   sectionSubtitlePad: { fontSize: 13, color: '#888', paddingHorizontal: 20, marginTop: 4, marginBottom: 15 },
   sectionSubtitleWhite: { fontSize: 13, color: '#e0e8f9', paddingHorizontal: 20, marginBottom: 10, marginTop: -35, zIndex: 10 },
-  
+
   seeAllButton: { paddingRight: 20, marginBottom: 15 },
   seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
-  horizontalScroll: { gap: 15, paddingHorizontal: 20 }, 
+  horizontalScroll: { gap: 15, paddingHorizontal: 20 },
 
   aiCardContainer: { marginBottom: 30 },
   aiCard: { marginHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#d0ddff', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20, marginTop: 20 },
-  aiHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 }, 
-  aiBadgeText: { fontSize: 12, fontWeight: 'bold', color: '#ffc107', textTransform: 'uppercase' }, 
+  aiHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  aiBadgeText: { fontSize: 12, fontWeight: 'bold', color: '#ffc107', textTransform: 'uppercase' },
   aiButton: { backgroundColor: '#2e64e5', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10 },
   aiButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
 
@@ -436,8 +614,29 @@ const styles = StyleSheet.create({
   subjectOptionText: { fontSize: 16, fontWeight: '600', color: '#2e64e5' },
   cancelButton: { marginTop: 20, alignItems: 'center', paddingVertical: 15, backgroundColor: '#f5f5f5', borderRadius: 12 },
   cancelButtonText: { fontSize: 16, fontWeight: 'bold', color: '#f44336' },
-  
+
   modulesContainer: { backgroundColor: '#f9fafb', paddingVertical: 5, paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   moduleOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   moduleOptionText: { fontSize: 14, color: '#444', fontWeight: '500' },
+
+  // --- Download Modal & Button Styles ---
+  headerDownloadBtn: { padding: 8, borderRadius: 12, backgroundColor: '#eef3ff', position: 'relative' },
+  badgeDownload: { position: 'absolute', top: -4, right: -4, backgroundColor: '#e65100', borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1, borderColor: '#fff' },
+  badgeDownloadText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+
+  modalOverlayDown: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalCardDown: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
+  modalHeaderDown: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitleDown: { fontSize: 18, fontWeight: 'bold', color: '#382314' },
+  modalSubtitleDown: { fontSize: 12, color: '#666', marginTop: 2 },
+  lessonRowDown: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#e6e0d8', marginBottom: 10, backgroundColor: '#fcfaf8' },
+  lessonRowActiveDown: { borderColor: '#2e64e5', backgroundColor: '#f2f6ff' },
+  subjectLabelDown: { fontSize: 11, fontWeight: 'bold', color: '#2e64e5', textTransform: 'uppercase' },
+  moduleLabelDown: { fontSize: 15, fontWeight: 'bold', color: '#382314', marginTop: 2 },
+  packMetaDown: { fontSize: 12, color: '#2e7d32', marginTop: 4, fontWeight: '600' },
+  downloadBtnDown: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#2e64e5', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
+  downloadBtnTextDown: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
+  useBtnDown: { backgroundColor: '#2e64e5', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
+  useBtnTextDown: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  deleteBtnDown: { padding: 6 },
 });

@@ -3,7 +3,8 @@ import { StyleSheet, Text, View, TouchableOpacity, Animated, Dimensions, Activit
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { API_BASE_URL } from '../lib/config'; // 🟢 Dynamically load the base URL
+import { API_BASE_URL } from '../lib/config';
+import { getActiveStudyPack } from '../lib/offlineStudyPacks';
 
 const { width } = Dimensions.get('window');
 
@@ -20,7 +21,20 @@ export default function FlashcardsScreen() {
   useEffect(() => {
     const fetchFlashcards = async () => {
       try {
-        // 🟢 Use API_BASE_URL to safely build the endpoint route
+        setIsLoading(true);
+
+        // 1. Check offline pack first
+        const activePack = await getActiveStudyPack();
+        if (activePack && activePack.flashcards && activePack.flashcards.length > 0) {
+          const matchesRequested = (!subject || subject === activePack.subjectTitle) && (!module || module === activePack.moduleTitle);
+          if (matchesRequested || (!subject && !module)) {
+             setFlashcardData(activePack.flashcards);
+             setIsLoading(false);
+             return;
+          }
+        }
+
+        // 2. Fetch online if not cached
         const apiUrl = new URL('/api/generate-flashcards', API_BASE_URL);
         apiUrl.searchParams.append('subjectTitle', subject || '');
         apiUrl.searchParams.append('moduleTitle', module || '');
@@ -54,7 +68,8 @@ export default function FlashcardsScreen() {
     if (subject && module) {
       fetchFlashcards();
     } else {
-      setIsLoading(false);
+      // If we don't have explicit params, still attempt to load from offline pack
+      fetchFlashcards();
     }
   }, [subject, module]);
 

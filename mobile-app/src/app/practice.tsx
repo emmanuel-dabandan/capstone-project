@@ -43,10 +43,10 @@ export default function PracticeScreen() {
   const [practiceComplete, setPracticeComplete] = useState(false);
 
   const fetchPractice = useCallback(async () => {
-    if (!subject || !module) {
+    if (!subject) {
       setQuestions([]);
       setCanRetry(false);
-      setErrorMessage('No module was selected. Please go back and choose a module.');
+      setErrorMessage('No subject was selected. Please go back and choose a subject.');
       setIsLoading(false);
       return;
     }
@@ -64,9 +64,11 @@ export default function PracticeScreen() {
     const timeoutId = setTimeout(() => controller.abort(), PRACTICE_TIMEOUT_MS);
 
     try {
-      const url =
-        `${API_BASE_URL}/api/generate-practice` +
-        `?subjectTitle=${encodeURIComponent(subject)}&moduleTitle=${encodeURIComponent(module)}`;
+      // "Practice First" (from the assessment alert) sends only the subject, so we
+      // practise the whole subject. Only send moduleTitle when a module was picked,
+      // otherwise the server would look for a lesson literally named "undefined".
+      let url = `${API_BASE_URL}/api/generate-practice?subjectTitle=${encodeURIComponent(subject)}`;
+      if (module) url += `&moduleTitle=${encodeURIComponent(module)}`;
 
       const response = await fetch(url, {
         signal: controller.signal,
@@ -85,10 +87,12 @@ export default function PracticeScreen() {
       // Backend answered with JSON, but it's an error object instead of questions
       if (!Array.isArray(data)) {
         if (data?.error) {
-          console.warn('Module not ready:', data.error);
+          console.warn(`Practice backend error (${response.status}):`, data.error);
           setQuestions([]);
           setErrorMessage(
-            "Practice questions aren't available for this module yet. Please make sure it has been uploaded."
+            response.status === 404
+              ? "Practice questions aren't available for this module yet. Please make sure it has been uploaded."
+              : "We couldn't generate your practice session right now. Please try again."
           );
           return;
         }
