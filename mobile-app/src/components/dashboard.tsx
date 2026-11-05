@@ -7,20 +7,6 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { FlatList } from 'react-native-gesture-handler';
 
-// 🟢 TEMPORARILY DISABLED FOR EXPO GO 
-// import * as Device from 'expo-device';
-// import * as Notifications from 'expo-notifications';
-
-// Notifications.setNotificationHandler({
-//   handleNotification: async () => ({
-//     shouldShowAlert: true,
-//     shouldPlaySound: true,
-//     shouldSetBadge: true,
-//     shouldShowBanner: true,
-//     shouldShowList: true,
-//   }),
-// });
-
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
 
@@ -58,6 +44,7 @@ export default function DashboardScreen() {
   const [streak, setStreak] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [isChallengeDone, setIsChallengeDone] = useState(false);
+  const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
 
   const infiniteModules = Array(100).fill(learningModules).flat().map((module, index) => ({ ...module, uniqueId: `card-${index}` }));
 
@@ -79,56 +66,55 @@ export default function DashboardScreen() {
     return () => clearInterval(timer);
   }, []);
 
+  const getTimeAgo = (dateString: string) => {
+    const seconds = Math.floor((new Date().getTime() - new Date(dateString).getTime()) / 1000);
+    if (seconds < 3600) return 'Just now';
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+    const days = Math.floor(seconds / 86400);
+    if (days === 1) return 'Yesterday';
+    if (days < 30) return `${days} days ago`;
+    return 'A month ago';
+  };
+
+  const markAsRead = async (id: string, isRead: boolean) => {
+    if (isRead) return;
+    setRecentNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+  };
+
   useFocusEffect(
     useCallback(() => {
-      const registerForPushNotificationsAsync = async (userId: string) => {
-        // 🟢 TEMPORARILY DISABLED FOR EXPO GO 
-        return undefined;
-
-        /*
-        let token;
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('default', { name: 'default', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#2e64e5' });
-        }
-        if (Device.isDevice) {
-          const { status: existingStatus } = await Notifications.getPermissionsAsync();
-          let finalStatus = existingStatus;
-          if (existingStatus !== 'granted') {
-            const { status } = await Notifications.requestPermissionsAsync();
-            finalStatus = status;
-          }
-          if (finalStatus === 'granted') {
-            token = (await Notifications.getExpoPushTokenAsync({ projectId: "your-expo-project-id-here" })).data;
-            await supabase.from('students').update({ expo_push_token: token }).eq('id', userId);
-          }
-        }
-        */
-      };
-
       const fetchDashboardData = async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
-            await registerForPushNotificationsAsync(user.id);
-
             const { data: profile } = await supabase
               .from('students')
-              .select('first_name, strand, xp, streak, last_challenge_date') 
+              .select('first_name, strand, xp, streak, last_challenge_date')
               .eq('id', user.id)
               .single();
 
             if (profile) {
               setFirstName(profile.first_name);
-              setStrand(profile.strand || 'Explorer'); 
+              setStrand(profile.strand || 'Explorer');
               setXp(profile.xp || 0);
               setStreak(profile.streak || 0);
 
-              // Check if challenge is done today in PHT
               const todayPHT = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
               setIsChallengeDone(profile.last_challenge_date === todayPHT);
 
-              // Update last active date
               await supabase.from('students').update({ last_active_date: todayPHT }).eq('id', user.id);
+            }
+
+            const { data: notifsData } = await supabase
+              .from('notifications')
+              .select('*')
+              .eq('student_id', user.id)
+              .order('created_at', { ascending: false })
+              .limit(3);
+
+            if (notifsData) {
+              setRecentNotifications(notifsData);
             }
           }
 
@@ -164,7 +150,7 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.mainBackground}>
-        
+
         <View style={styles.topSection}>
           <View style={styles.headerBar}>
             <View style={styles.statPill}><Text style={styles.statTextXP}>{xp} XP</Text></View>
@@ -177,7 +163,7 @@ export default function DashboardScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+
           {/* THE NEW CHALLENGE CARD */}
           <View style={styles.challengeCard}>
             <View style={styles.challengeHeader}>
@@ -196,7 +182,7 @@ export default function DashboardScreen() {
                 <Ionicons name="star" size={14} color="#fbc02d" />
                 <Text style={styles.rewardText}>+150 XP</Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.challengeButton, isChallengeDone && styles.challengeButtonDone]}
                 disabled={isChallengeDone}
                 onPress={() => router.push('/gauntlet' as any)}
@@ -208,10 +194,10 @@ export default function DashboardScreen() {
 
           <View style={styles.carouselContainer}>
             <Text style={styles.sectionTitle}>Your Learning Path</Text>
-            <FlatList 
-                style={{ transform: [{ translateX: Platform.OS === 'android' ? -15 : 0 }] }} 
+            <FlatList
+                style={{ transform: [{ translateX: Platform.OS === 'android' ? -15 : 0 }] }}
                 horizontal={true} nestedScrollEnabled={true} showsHorizontalScrollIndicator={false} snapToInterval={CARD_WIDTH + 15} snapToAlignment="center" decelerationRate="fast"
-                contentContainerStyle={styles.carouselContent} data={infiniteModules} keyExtractor={(item) => item.uniqueId} initialScrollIndex={learningModules.length * 50} 
+                contentContainerStyle={styles.carouselContent} data={infiniteModules} keyExtractor={(item) => item.uniqueId} initialScrollIndex={learningModules.length * 50}
                 getItemLayout={(data, index) => ({ length: CARD_WIDTH + 15, offset: (CARD_WIDTH + 15) * index, index })}
                 ListHeaderComponent={Platform.OS === 'android' ? <View style={{ width: (width - CARD_WIDTH) / 2 - 7.5 }} /> : null}
                 ListFooterComponent={Platform.OS === 'android' ? <View style={{ width: (width - CARD_WIDTH) / 2 - 7.5 }} /> : null}
@@ -241,14 +227,42 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.notificationsContainer}>
-            <TouchableOpacity style={styles.notificationCard} activeOpacity={0.7}>
-              <View style={styles.notificationTextWrapper}>
-                <Text style={styles.notificationTitle}>New Module Available</Text>
-                <Text style={styles.notificationMessage}>The ALS Coordinator has unlocked a new Cookery lesson.</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#2e64e5" />
-            </TouchableOpacity>
+          <View style={styles.notificationsOuterContainer}>
+            <View style={styles.cardContainer}>
+              {recentNotifications.length === 0 ? (
+                <View style={{ padding: 25, alignItems: 'center' }}>
+                  <Text style={{ color: '#aaa', fontSize: 13 }}>No recent updates.</Text>
+                </View>
+              ) : (
+                recentNotifications.map((item, index) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.notificationItem,
+                      index === recentNotifications.length - 1 && styles.lastItem
+                    ]}
+                    activeOpacity={0.6}
+                    onPress={() => {
+                      markAsRead(item.id, item.is_read);
+                      router.push('/notifications' as any);
+                    }}
+                  >
+                    <View style={styles.itemContent}>
+                      <Text style={[styles.messageText, !item.is_read && styles.messageTextUnread]} numberOfLines={2}>
+                        {item.message}
+                      </Text>
+
+                      <View style={styles.timeRow}>
+                        {!item.is_read && <View style={styles.unreadDot} />}
+                        <Text style={styles.timeText}>{getTimeAgo(item.created_at)}</Text>
+                      </View>
+                    </View>
+
+                    <Ionicons name="chevron-forward" size={20} color="#333" />
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
           </View>
         </ScrollView>
       </View>
@@ -257,33 +271,32 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#2e64e5' }, 
+  safeArea: { flex: 1, backgroundColor: '#2e64e5' },
   mainBackground: { flex: 1, backgroundColor: '#fcfaf8' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8' },
   topSection: { backgroundColor: '#2e64e5', paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, zIndex: 1 },
-  scrollContent: { paddingBottom: 100, paddingTop: 10 }, 
+  scrollContent: { paddingBottom: 100, paddingTop: 10 },
   headerBar: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 25 },
-  statPill: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#d0ddff' },  
+  statPill: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#d0ddff' },
   statTextXP: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
   statText: { fontSize: 14, fontWeight: 'bold' },
   welcomeContainer: { paddingHorizontal: 20 },
-  greetingText: { fontSize: 18, color: '#e0e8f9' }, 
-  nameText: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' }, 
+  greetingText: { fontSize: 18, color: '#e0e8f9' },
+  nameText: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' },
 
-  // Updated Challenge Card Styles
   challengeCard: { marginHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#d0ddff', marginBottom: 30, marginTop: 0, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20 },
   challengeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
   challengeTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
   challengeSubtitle: { fontSize: 13, color: '#666', marginTop: 2 },
-  challengeTimerBadge: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#f0f4ff', 
-    paddingHorizontal: 8, 
-    paddingVertical: 3, 
-    borderRadius: 10 
+  challengeTimerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f4ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10
   },
-  timerText: { fontSize: 12, fontWeight: 'bold', color: '#666', marginLeft: 4 },  
+  timerText: { fontSize: 12, fontWeight: 'bold', color: '#666', marginLeft: 4 },
   challengeFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rewardPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff9c4', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   rewardText: { fontSize: 14, fontWeight: 'bold', color: '#f57f17', marginLeft: 4 },
@@ -298,11 +311,11 @@ const styles = StyleSheet.create({
   cardContentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardLeft: { width: '65%', justifyContent: 'center', paddingRight: 15 },
   cardRight: { width: '35%', alignItems: 'flex-end', justifyContent: 'center' },
-  subjectTitle: { fontSize: 18, fontWeight: 'bold', color: '#ffffff', marginBottom: 6, lineHeight: 24 }, 
-  subjectSubtitle: { fontSize: 13, color: '#a0b9c1', marginBottom: 20 }, 
-  cardButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, alignSelf: 'flex-start' }, 
-  startButton: { backgroundColor: '#fefefe' }, 
-  continueButton: { backgroundColor: '#fefefe' }, 
+  subjectTitle: { fontSize: 18, fontWeight: 'bold', color: '#ffffff', marginBottom: 6, lineHeight: 24 },
+  subjectSubtitle: { fontSize: 13, color: '#a0b9c1', marginBottom: 20 },
+  cardButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, alignSelf: 'flex-start' },
+  startButton: { backgroundColor: '#fefefe' },
+  continueButton: { backgroundColor: '#fefefe' },
   cardButtonText: { fontSize: 13, fontWeight: 'bold' },
   startButtonText: { color: '#000000' },
   continueButtonText: { color: '#050505' },
@@ -311,9 +324,15 @@ const styles = StyleSheet.create({
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   seeAllButton: { paddingRight: 20, marginBottom: 15 },
   seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
-  notificationsContainer: { paddingHorizontal: 20, paddingBottom: 20 },
-  notificationCard: { backgroundColor: '#ffffff', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#e0d8d0' },  
-  notificationTextWrapper: { flex: 1 },
-  notificationTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 2 },
-  notificationMessage: { fontSize: 12, color: '#666', lineHeight: 15 },
+
+  notificationsOuterContainer: { paddingHorizontal: 20, paddingBottom: 20 },
+  cardContainer: { backgroundColor: '#ffffff', borderRadius: 20, borderWidth: 1, borderColor: '#d0ddff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, overflow: 'hidden' },
+  notificationItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#f0f4ff' },
+  lastItem: { borderBottomWidth: 0 },
+  itemContent: { flex: 1, paddingRight: 15 },
+  messageText: { fontSize: 14, color: '#333', lineHeight: 20, fontWeight: '400' },
+  messageTextUnread: { fontWeight: 'bold', color: '#1a1a1a' },
+  timeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  unreadDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00e676', marginRight: 6 },
+  timeText: { fontSize: 12, color: '#aaa', fontWeight: '500' },
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert, BackHandler } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
@@ -13,10 +13,8 @@ type QuizQuestion = {
   correct_answer: string;
 };
 
-// Gemini can take a while, but we should never hang forever on a dead server
 const QUIZ_TIMEOUT_MS = 45000;
 
-// Drops malformed questions instead of crashing on them
 const isValidQuestion = (q: any): q is QuizQuestion =>
   !!q &&
   typeof q.question === 'string' &&
@@ -25,7 +23,6 @@ const isValidQuestion = (q: any): q is QuizQuestion =>
   typeof q.correct_answer === 'string';
 
 export default function QuizScreen() {
-  // 🟢 Instantly blocks screenshots and screen recordings on this screen
   usePreventScreenCapture();
 
   const { subject } = useLocalSearchParams<{ subject: string }>();
@@ -37,13 +34,37 @@ export default function QuizScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [quizComplete, setQuizComplete] = useState(false);
 
-  // 🔴 Error state: shown instead of crashing when the quiz can't be loaded
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(true);
 
-  // Grading State
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [score, setScore] = useState(0);
+
+  // Safe navigation helper that clears history stack and lands cleanly on home
+  const navigateHome = () => {
+    if (router.canDismiss()) {
+      router.dismissAll();
+    }
+    router.replace('/home' as any);
+  };
+
+  // Intercept Android hardware back button so users cannot loop back into a completed/abandoned quiz
+  useEffect(() => {
+    const backAction = () => {
+      if (quizComplete) {
+        navigateHome();
+        return true;
+      }
+      Alert.alert("Abandon Assessment?", "If you leave now, you will score a 0 and cannot retake it.", [
+        { text: "Stay", style: "cancel" },
+        { text: "Leave", style: "destructive", onPress: navigateHome }
+      ]);
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [quizComplete]);
 
   const fetchUniqueQuiz = useCallback(async () => {
     setIsLoading(true);
@@ -54,7 +75,6 @@ export default function QuizScreen() {
     const timeoutId = setTimeout(() => controller.abort(), QUIZ_TIMEOUT_MS);
 
     try {
-      // Check if they already took it first to prevent wasting API calls
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: existingGrade } = await supabase
@@ -72,7 +92,6 @@ export default function QuizScreen() {
         }
       }
 
-      // Fetch the randomized Gemini quiz from your Node.js backend
       const response = await fetch(
         `${API_BASE_URL}/api/generate-quiz?moduleTitle=${encodeURIComponent(moduleTitle)}`,
         { signal: controller.signal, headers: { Accept: 'application/json' } }
@@ -108,7 +127,6 @@ export default function QuizScreen() {
     fetchUniqueQuiz();
   }, [fetchUniqueQuiz]);
 
-  // Saves the permanent grade. Only shows the result screen if it really saved.
   const saveGrade = async (finalScore: number) => {
     setIsSubmitting(true);
     try {
@@ -125,10 +143,10 @@ export default function QuizScreen() {
         });
 
       if (insertError) {
-        // 23505 = unique violation: a grade already exists for this module
         if ((insertError as any).code === '23505') {
-          Alert.alert('Already Completed', 'A grade is already recorded for this assessment.');
-          router.back();
+          Alert.alert('Already Completed', 'A grade is already recorded for this assessment.', [
+            { text: 'OK', onPress: navigateHome }
+          ]);
           return;
         }
         throw insertError;
@@ -152,7 +170,6 @@ export default function QuizScreen() {
     const currentQ = questions[currentIndex];
     if (!currentQ) return;
 
-    // Check answer silently (no immediate red/green feedback for formal assessments)
     const isCorrect =
       selectedAnswer.trim().toLowerCase() === String(currentQ.correct_answer ?? '').trim().toLowerCase();
     const newScore = score + (isCorrect ? 1 : 0);
@@ -176,7 +193,7 @@ export default function QuizScreen() {
     );
   }
 
-  // 🏆 RESULT SCREEN
+  // RESULT SCREEN
   if (quizComplete) {
     const passed = score >= (questions.length / 2);
     return (
@@ -193,15 +210,15 @@ export default function QuizScreen() {
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.returnButton} onPress={() => router.replace('/learn' as any)}>
-            <Text style={styles.returnButtonText}>Return to Library</Text>
+          <TouchableOpacity style={styles.returnButton} onPress={navigateHome}>
+            <Text style={styles.returnButtonText}>Return to Home</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // 🔴 ERROR / EMPTY SCREEN (replaces the old crash on `currentQ.question`)
+  // ERROR / EMPTY SCREEN
   const currentQ = questions[currentIndex];
   if (errorMessage || !currentQ) {
     return (
@@ -219,15 +236,14 @@ export default function QuizScreen() {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
-            <Text style={styles.backLinkText}>Go Back</Text>
+          <TouchableOpacity style={styles.backLink} onPress={navigateHome}>
+            <Text style={styles.backLinkText}>Return to Home</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // 🎮 QUIZ SCREEN
   const progressPercent = ((currentIndex + 1) / questions.length) * 100;
 
   return (
@@ -237,7 +253,7 @@ export default function QuizScreen() {
         <TouchableOpacity onPress={() => {
           Alert.alert("Abandon Assessment?", "If you leave now, you will score a 0 and cannot retake it.", [
             { text: "Stay", style: "cancel" },
-            { text: "Leave", style: "destructive", onPress: () => router.back() }
+            { text: "Leave", style: "destructive", onPress: navigateHome }
           ]);
         }} style={styles.closeButton}>
           <Ionicons name="close" size={28} color="#aaa" />
@@ -324,8 +340,8 @@ const styles = StyleSheet.create({
   submitButtonDisabled: { backgroundColor: '#a5c0ff' },
   submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
 
-  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#fcfaf8' },
-  successTitle: { fontSize: 28, fontWeight: '900', color: '#333', marginTop: 20, marginBottom: 10 },
+  successContainer: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#fcfaf8' },
+  successTitle: { fontSize: 28, fontWeight: '900', color: '#333', marginTop: 28, marginBottom: 10 },
   successMessage: { fontSize: 16, color: '#666', textAlign: 'center', lineHeight: 24, marginBottom: 40 },
   rewardBox: { backgroundColor: '#ffffff', paddingVertical: 20, paddingHorizontal: 40, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: '#d0ddff', marginBottom: 40, width: '100%' },
   rewardLabel: { fontSize: 14, color: '#aaa', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 },
