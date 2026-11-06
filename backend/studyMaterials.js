@@ -541,4 +541,9 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
     getStoredMaterials,
     ensureMaterials,
     queueSubject: (subjectTitle) => queueMissing(subjectTitle),
-    queue
+    queueMissing,
+    startBackfill,
+    whenIdle,
+    pickPracticeSubset,
+  };
+}
