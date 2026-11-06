@@ -8,11 +8,11 @@ import { useAppTheme } from '../lib/ThemeContext';
 
 export default function ActivityScreen() {
   const { theme } = useAppTheme();
-  const { lessonData, subject, lessonIndex, totalLessons } = useLocalSearchParams();
+  const { lessonData, subject, moduleId, lessonIndex, totalLessons } = useLocalSearchParams();
   const [lesson, setLesson] = useState<any>(null);
   const [activity, setActivity] = useState<any>(null);
   const [nextLesson, setNextLesson] = useState<any>(null);
-  const [subjectName, setSubjectName] = useState<string>('');
+  const [subjectName, setSubjectName] = useState<string>((subject as string) || '');
 
   const [userAnswer, setUserAnswer] = useState<string>('');
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -26,11 +26,27 @@ export default function ActivityScreen() {
       try {
         const parsed = JSON.parse(lessonData as string);
         setLesson(parsed);
-        if (parsed.activity) {
+
+        if (parsed.activity && parsed.activity.question_prompt) {
           setActivity(parsed.activity);
+        } else if (parsed.knowledge_check_question) {
+          // Fallback for lessons uploaded with the older schema
+          setActivity({
+            activity_type: 'true_false',
+            question_prompt: `${parsed.knowledge_check_question}\n\n(Self-Check: Select True once you can answer and explain this concept from "${parsed.lesson_title || 'this lesson'}".)`,
+            options: ['True', 'False'],
+            correct_answer: 'True',
+          });
+        } else {
+          setActivity({
+            activity_type: 'true_false',
+            question_prompt: `Have you completed reading "${parsed.lesson_title || 'this lesson'}" and reviewed its key points?`,
+            options: ['True', 'False'],
+            correct_answer: 'True',
+          });
         }
       } catch (e) {
-        console.error("Failed to parse lesson data", e);
+        console.error('Failed to parse lesson data', e);
       }
     }
   }, [lessonData]);
@@ -49,7 +65,13 @@ export default function ActivityScreen() {
     const cleanUser = superClean(userAns);
     const cleanCorrect = superClean(rawCorrect);
 
-    if (cleanUser && cleanCorrect && (cleanUser === cleanCorrect || cleanUser.includes(cleanCorrect) || cleanCorrect.includes(cleanUser))) {
+    if (
+      cleanUser &&
+      cleanCorrect &&
+      (cleanUser === cleanCorrect ||
+        cleanUser.includes(cleanCorrect) ||
+        cleanCorrect.includes(cleanUser))
+    ) {
       return true;
     }
 
@@ -115,42 +137,56 @@ export default function ActivityScreen() {
           await supabase.from('students').update({ xp: newXp }).eq('id', user.id);
           await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 50 });
         } catch (err) {
-          console.error("XP Update Failed:", err);
+          console.error('XP Update Failed:', err);
         }
 
         try {
-          const { data: allModules } = await supabase.from('ai_lessons').select('id, progress, parsed_content, title');
+          const { data: allModules } = await supabase
+            .from('ai_lessons')
+            .select('id, progress, parsed_content, title');
+
           const currentTitle = lesson?.lesson_title || lesson?.title;
-          const parentMod = allModules?.find((m: any) =>
-            m.parsed_content?.lessons?.some((l: any) => (l.lesson_title || l.title) === currentTitle)
-          );
+          const parentMod =
+            (moduleId && allModules?.find((m: any) => String(m.id) === String(moduleId))) ||
+            allModules?.find((m: any) =>
+              m.parsed_content?.lessons?.some((l: any) => (l.lesson_title || l.title) === currentTitle)
+            );
 
           if (parentMod) {
             if (parentMod.title) setSubjectName(parentMod.title);
-            const lessonsArray = parentMod.parsed_content.lessons;
+            const lessonsArray = parentMod.parsed_content?.lessons || [];
             const totalLessonsInModule = lessonsArray.length || 1;
-            const progressIncrement = Math.round(100 / totalLessonsInModule);
-            const newProgress = Math.min(100, (parentMod.progress || 0) + progressIncrement);
+
+            const currentIndex = lessonsArray.findIndex(
+              (l: any) => (l.lesson_title || l.title) === currentTitle
+            );
+            const idxNum = currentIndex !== -1 ? currentIndex : parseInt((lessonIndex as string) || '0', 10);
+
+            // Ensure progress moves forward to at least the completed lesson index
+            const targetProgress = Math.min(
+              100,
+              Math.round(((idxNum + 1) / totalLessonsInModule) * 100)
+            );
+            const newProgress = Math.max(parentMod.progress || 0, targetProgress);
 
             await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', parentMod.id);
 
-            const currentIndex = lessonsArray.findIndex((l: any) => (l.lesson_title || l.title) === currentTitle);
-            if (currentIndex !== -1 && currentIndex + 1 < lessonsArray.length) {
-              setNextLesson(lessonsArray[currentIndex + 1]);
+            if (idxNum + 1 < lessonsArray.length) {
+              setNextLesson(lessonsArray[idxNum + 1]);
             }
           }
         } catch (err) {
-          console.error("Progress Update Failed:", err);
+          console.error('Progress Update Failed:', err);
         }
 
         try {
           await supabase.from('notifications').insert({
             student_id: user.id,
-            message: `Great job! You mastered a lesson and earned 50 XP.`,
-            type: 'new_module'
+            message: 'Great job! You mastered a lesson and earned 50 XP.',
+            type: 'new_module',
           });
         } catch (err) {
-          console.error("Notification Insert Failed:", err);
+          console.error('Notification Insert Failed:', err);
         }
       }
     }
@@ -158,24 +194,14 @@ export default function ActivityScreen() {
 
   const handleContinue = () => {
     try {
-      const currentIdx = parseInt(lessonIndex as string, 10) || 0;
-      const total = parseInt(totalLessons as string, 10) || 1;
-      const currentSubject = subject as string || 'Unknown';
-
-      if (currentIdx < total - 1) {
-        router.push({
-          pathname: '/lesson',
-          params: {
-            subject: currentSubject,
-            lessonIndex: (currentIdx + 1).toString()
-          }
-        });
-      } else {
-        router.replace('/home');
-      }
+      const targetSubject = (subject as string) || subjectName || 'Course Modules';
+      router.navigate({
+        pathname: '/lesson',
+        params: { subject: targetSubject },
+      } as any);
     } catch (error) {
-      console.error("Routing error:", error);
-      router.replace('/');
+      console.error('Routing error:', error);
+      router.back();
     }
   };
 
@@ -292,15 +318,17 @@ export default function ActivityScreen() {
               style={[
                 styles.wordChip,
                 { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
-                userAnswer === word && styles.wordChipSelected
+                userAnswer === word && styles.wordChipSelected,
               ]}
               onPress={() => !isSubmitted && setUserAnswer(word)}
             >
-              <Text style={[
-                styles.wordChipText,
-                theme.isDark && { color: '#60a5fa' },
-                userAnswer === word && styles.wordChipTextSelected
-              ]}>
+              <Text
+                style={[
+                  styles.wordChipText,
+                  theme.isDark && { color: '#60a5fa' },
+                  userAnswer === word && styles.wordChipTextSelected,
+                ]}
+              >
                 {word}
               </Text>
             </TouchableOpacity>
@@ -312,7 +340,9 @@ export default function ActivityScreen() {
 
   const renderMatching = () => (
     <View style={styles.matchingContainer}>
-      <Text style={[styles.instructionText, { color: theme.textSecondary }]}>Step 1: Tap a Term. Step 2: Tap its Definition.</Text>
+      <Text style={[styles.instructionText, { color: theme.textSecondary }]}>
+        Step 1: Tap a Term. Step 2: Tap its Definition.
+      </Text>
 
       <View style={styles.matchingColumns}>
         <View style={styles.column}>
@@ -332,11 +362,13 @@ export default function ActivityScreen() {
                 ]}
                 onPress={() => !isSubmitted && !isMatched && setSelectedTerm(pair.term)}
               >
-                <Text style={[
-                  styles.matchText,
-                  { color: theme.textPrimary },
-                  (isSelected || isMatched) && styles.matchTextSelected
-                ]}>
+                <Text
+                  style={[
+                    styles.matchText,
+                    { color: theme.textPrimary },
+                    (isSelected || isMatched) && styles.matchTextSelected,
+                  ]}
+                >
                   {pair.term}
                 </Text>
               </TouchableOpacity>
@@ -357,7 +389,7 @@ export default function ActivityScreen() {
                 style={[
                   styles.matchCard,
                   { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
-                  matchedTerm && styles.matchCardMatched
+                  matchedTerm && styles.matchCardMatched,
                 ]}
                 onPress={() => {
                   if (!isSubmitted && selectedTerm && !matchedTerm) {
@@ -366,11 +398,13 @@ export default function ActivityScreen() {
                   }
                 }}
               >
-                <Text style={[
-                  styles.matchText,
-                  { color: theme.textPrimary },
-                  matchedTerm && styles.matchTextSelected
-                ]}>
+                <Text
+                  style={[
+                    styles.matchText,
+                    { color: theme.textPrimary },
+                    matchedTerm && styles.matchTextSelected,
+                  ]}
+                >
                   {matchedTerm ? `Matched to: ${matchedTerm}` : pair.definition}
                 </Text>
               </TouchableOpacity>
@@ -523,5 +557,5 @@ const styles = StyleSheet.create({
   submitButtonDisabled: { backgroundColor: '#a0b9c1' },
   continueButton: { backgroundColor: '#4caf50' },
   retryButton: { backgroundColor: '#f44336' },
-  submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' }
+  submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
 });

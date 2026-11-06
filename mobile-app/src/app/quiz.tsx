@@ -27,8 +27,9 @@ export default function QuizScreen() {
   usePreventScreenCapture();
   const { theme } = useAppTheme();
 
-  const { subject } = useLocalSearchParams<{ subject: string }>();
-  const moduleTitle = subject || 'Cookery & Food Safety';
+  const { subject, module } = useLocalSearchParams<{ subject: string; module?: string }>();
+  const subjectTitle = subject || 'Cookery & Food Safety';
+  const gradeTitle = module || subjectTitle;
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -46,7 +47,7 @@ export default function QuizScreen() {
     if (router.canDismiss()) {
       router.dismissAll();
     }
-    router.replace('/home' as any);
+    router.replace('/learn' as any);
   };
 
   useEffect(() => {
@@ -55,9 +56,9 @@ export default function QuizScreen() {
         navigateHome();
         return true;
       }
-      Alert.alert("Abandon Assessment?", "If you leave now, you will score a 0 and cannot retake it.", [
-        { text: "Stay", style: "cancel" },
-        { text: "Leave", style: "destructive", onPress: navigateHome }
+      Alert.alert('Abandon Assessment?', 'If you leave now, you will score a 0 and cannot retake it.', [
+        { text: 'Stay', style: 'cancel' },
+        { text: 'Leave', style: 'destructive', onPress: navigateHome }
       ]);
       return true;
     };
@@ -81,7 +82,7 @@ export default function QuizScreen() {
           .from('quiz_grades')
           .select('id')
           .eq('student_id', user.id)
-          .eq('module_title', moduleTitle)
+          .in('module_title', [gradeTitle, subjectTitle])
           .maybeSingle();
 
         if (existingGrade) {
@@ -93,7 +94,7 @@ export default function QuizScreen() {
       }
 
       const response = await fetch(
-        `${API_BASE_URL}/api/generate-quiz?moduleTitle=${encodeURIComponent(moduleTitle)}`,
+        `${API_BASE_URL}/api/generate-quiz?subjectTitle=${encodeURIComponent(subjectTitle)}&moduleTitle=${encodeURIComponent(subjectTitle)}`,
         { signal: controller.signal, headers: { Accept: 'application/json' } }
       );
 
@@ -119,7 +120,7 @@ export default function QuizScreen() {
       clearTimeout(timeoutId);
       setIsLoading(false);
     }
-  }, [moduleTitle]);
+  }, [subjectTitle, gradeTitle]);
 
   useEffect(() => {
     fetchUniqueQuiz();
@@ -135,7 +136,7 @@ export default function QuizScreen() {
         .from('quiz_grades')
         .insert({
           student_id: user.id,
-          module_title: moduleTitle,
+          module_title: gradeTitle,
           score: finalScore,
           total_items: questions.length,
         });
@@ -196,19 +197,19 @@ export default function QuizScreen() {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
         <View style={[styles.successContainer, { backgroundColor: theme.bg }]}>
-          <Ionicons name={passed ? "checkmark-circle" : "alert-circle"} size={80} color={passed ? "#4caf50" : "#f44336"} />
+          <Ionicons name={passed ? 'checkmark-circle' : 'alert-circle'} size={80} color={passed ? '#4caf50' : '#f44336'} />
           <Text style={[styles.successTitle, { color: theme.textPrimary }]}>Assessment Complete</Text>
           <Text style={[styles.successMessage, { color: theme.textSecondary }]}>Your permanent grade has been recorded in the ALS system.</Text>
 
           <View style={[styles.rewardBox, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
             <Text style={[styles.rewardLabel, { color: theme.textSecondary }]}>Final Score</Text>
-            <Text style={[styles.rewardValue, { color: passed ? "#4caf50" : "#f44336" }]}>
+            <Text style={[styles.rewardValue, { color: passed ? '#4caf50' : '#f44336' }]}>
               {score} / {questions.length}
             </Text>
           </View>
 
           <TouchableOpacity style={styles.returnButton} onPress={navigateHome}>
-            <Text style={styles.returnButtonText}>Return to Home</Text>
+            <Text style={styles.returnButtonText}>View Quiz Grades</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -233,7 +234,7 @@ export default function QuizScreen() {
           )}
 
           <TouchableOpacity style={styles.backLink} onPress={navigateHome}>
-            <Text style={styles.backLinkText}>Return to Home</Text>
+            <Text style={styles.backLinkText}>Return to Learn</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -247,9 +248,9 @@ export default function QuizScreen() {
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
-          Alert.alert("Abandon Assessment?", "If you leave now, you will score a 0 and cannot retake it.", [
-            { text: "Stay", style: "cancel" },
-            { text: "Leave", style: "destructive", onPress: navigateHome }
+          Alert.alert('Abandon Assessment?', 'If you leave now, you will score a 0 and cannot retake it.', [
+            { text: 'Stay', style: 'cancel' },
+            { text: 'Leave', style: 'destructive', onPress: navigateHome }
           ]);
         }} style={styles.closeButton}>
           <Ionicons name="close" size={28} color={theme.textSecondary} />

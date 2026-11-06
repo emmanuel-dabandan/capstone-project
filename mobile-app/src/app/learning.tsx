@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useAppTheme } from '../lib/ThemeContext';
-
-const { width } = Dimensions.get('window');
 
 interface KeyConcept {
   concept_title: string;
@@ -17,10 +15,13 @@ interface ParsedLesson {
   lesson_title: string;
   duration_minutes: number;
   type: string;
-  overview_title: string;
-  overview_body: string;
-  key_concepts: KeyConcept[];
-  full_module_text: string;
+  overview_title?: string;
+  overview_body?: string;
+  key_concepts?: KeyConcept[];
+  full_module_text?: string;
+  core_text?: string;
+  knowledge_check_question?: string;
+  activity?: any;
 }
 
 interface AIModule {
@@ -31,7 +32,7 @@ interface AIModule {
 export default function LearningScreen() {
   const { theme } = useAppTheme();
   const router = useRouter();
-  const { lessonData } = useLocalSearchParams();
+  const { lessonData, subject, moduleId, lessonIndex, totalLessons } = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState<'overview' | 'full'>('overview');
   const [moduleData, setModuleData] = useState<AIModule | null>(null);
   const [currentLesson, setCurrentLesson] = useState<ParsedLesson | null>(null);
@@ -39,27 +40,32 @@ export default function LearningScreen() {
 
   useEffect(() => {
     fetchLatestLesson();
-  }, [lessonData]);
+  }, [lessonData, moduleId]);
 
   const fetchLatestLesson = async () => {
     try {
-      const { data, error } = await supabase
-        .from('ai_lessons')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      let query = supabase.from('ai_lessons').select('*');
+      if (moduleId) {
+        query = query.eq('id', moduleId);
+      } else if (subject) {
+        query = query.eq('title', subject).order('created_at', { ascending: false }).limit(1);
+      } else {
+        query = query.order('created_at', { ascending: false }).limit(1);
+      }
 
+      const { data, error } = await query.maybeSingle();
       if (error) throw error;
-      setModuleData(data.parsed_content);
+      if (data?.parsed_content) {
+        setModuleData(data.parsed_content);
+      }
 
       if (lessonData) {
         setCurrentLesson(JSON.parse(lessonData as string));
-      } else if (data.parsed_content?.lessons?.length > 0) {
+      } else if (data?.parsed_content?.lessons?.length > 0) {
         setCurrentLesson(data.parsed_content.lessons[0]);
       }
     } catch (error: any) {
-      console.error("Error fetching learning data:", error.message);
+      console.error('Error fetching learning data:', error.message);
     } finally {
       setLoading(false);
     }
@@ -84,13 +90,29 @@ export default function LearningScreen() {
     );
   }
 
-  if (!moduleData || !currentLesson) {
+  if (!currentLesson) {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={{ color: theme.textPrimary }}>No lesson content found. Please upload a module.</Text>
       </View>
     );
   }
+
+  const lessonIdxNum = parseInt((lessonIndex as string) || '0', 10);
+  const totalLessonsNum = parseInt((totalLessons as string) || String(moduleData?.lessons?.length || 1), 10);
+  const progressPercent = Math.round(((lessonIdxNum + 1) / Math.max(1, totalLessonsNum)) * 100);
+
+  const overviewTitle = currentLesson.overview_title || currentLesson.lesson_title || 'Lesson Overview';
+  const overviewBody =
+    currentLesson.overview_body ||
+    currentLesson.core_text ||
+    currentLesson.full_module_text ||
+    'No summary text available for this lesson.';
+  const fullText =
+    currentLesson.full_module_text ||
+    currentLesson.core_text ||
+    currentLesson.overview_body ||
+    'No full module text available.';
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
@@ -106,26 +128,27 @@ export default function LearningScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerTextContainer}>
-            <Text style={styles.subjectText} numberOfLines={1}>{moduleData.module_title}</Text>
+            <Text style={styles.subjectText} numberOfLines={1}>
+              {moduleData?.module_title || (subject as string) || 'Module'}
+            </Text>
             <Text style={styles.lessonTitle} numberOfLines={1}>{currentLesson.lesson_title}</Text>
           </View>
 
-          <Text style={styles.counterText}>1/{moduleData.lessons.length}</Text>
+          <Text style={styles.counterText}>{lessonIdxNum + 1}/{totalLessonsNum}</Text>
         </View>
 
         <View style={styles.progressSection}>
           <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: '5%' }]} />
+            <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
           </View>
           <View style={styles.progressLabels}>
-            <Text style={styles.progressLabelText}>Progress</Text>
-            <Text style={styles.progressLabelText}>0%</Text>
+            <Text style={styles.progressLabelText}>Lesson Progress</Text>
+            <Text style={styles.progressLabelText}>{progressPercent}%</Text>
           </View>
         </View>
       </SafeAreaView>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
         <View style={styles.toggleRow}>
           <TouchableOpacity
             style={[
@@ -172,7 +195,7 @@ export default function LearningScreen() {
               </View>
               <View style={[styles.xpBadge, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
                 <Ionicons name="star-outline" size={14} color={theme.isDark ? '#60a5fa' : '#3B82F6'} />
-                <Text style={[styles.xpBadgeText, theme.isDark && { color: '#60a5fa' }]}> +5 XP</Text>
+                <Text style={[styles.xpBadgeText, theme.isDark && { color: '#60a5fa' }]}> +50 XP</Text>
               </View>
             </View>
 
@@ -181,29 +204,32 @@ export default function LearningScreen() {
                 <View style={[styles.iconCircleBlue, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
                   <Ionicons name="information" size={18} color="#3B82F6" />
                 </View>
-                <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{currentLesson.overview_title}</Text>
+                <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{overviewTitle}</Text>
               </View>
               <Text style={[styles.bodyText, { color: theme.textSecondary }]}>
-                {currentLesson.overview_body}
+                {overviewBody}
               </Text>
             </View>
 
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Key Concepts</Text>
-
-            {currentLesson.key_concepts?.map((concept, index) => {
-              const iconStyle = getConceptIcon(index);
-              return (
-                <View key={index} style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
-                  <View style={styles.conceptHeader}>
-                    <Ionicons name={iconStyle.name as any} size={24} color={iconStyle.color} style={styles.conceptIcon} />
-                    <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{concept.concept_title}</Text>
-                  </View>
-                  <Text style={[styles.bodyText, { color: theme.textSecondary }]}>
-                    {concept.concept_body}
-                  </Text>
-                </View>
-              );
-            })}
+            {Array.isArray(currentLesson.key_concepts) && currentLesson.key_concepts.length > 0 && (
+              <>
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Key Concepts</Text>
+                {currentLesson.key_concepts.map((concept, index) => {
+                  const iconStyle = getConceptIcon(index);
+                  return (
+                    <View key={index} style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
+                      <View style={styles.conceptHeader}>
+                        <Ionicons name={iconStyle.name as any} size={24} color={iconStyle.color} style={styles.conceptIcon} />
+                        <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{concept.concept_title}</Text>
+                      </View>
+                      <Text style={[styles.bodyText, { color: theme.textSecondary }]}>
+                        {concept.concept_body}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </>
+            )}
 
             <View style={[styles.disclaimerBox, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
               <Ionicons name="star-outline" size={20} color={theme.isDark ? '#93c5fd' : '#3B82F6'} style={{ marginTop: 2, marginRight: 10 }} />
@@ -214,7 +240,7 @@ export default function LearningScreen() {
           </View>
         ) : (
           <View style={styles.fullModuleContainer}>
-            <Text style={[styles.bodyText, { color: theme.textPrimary }]}>{currentLesson.full_module_text}</Text>
+            <Text style={[styles.bodyText, { color: theme.textPrimary }]}>{fullText}</Text>
           </View>
         )}
       </ScrollView>
@@ -226,14 +252,19 @@ export default function LearningScreen() {
           onPress={() => {
             router.push({
               pathname: '/activity' as any,
-              params: { lessonData: JSON.stringify(currentLesson) }
+              params: {
+                lessonData: JSON.stringify(currentLesson),
+                subject: (subject as string) || '',
+                moduleId: (moduleId as string) || '',
+                lessonIndex: String(lessonIdxNum),
+                totalLessons: String(totalLessonsNum),
+              }
             });
           }}
         >
           <Text style={styles.primaryButtonText}>Start Activity</Text>
         </TouchableOpacity>
       </View>
-
     </View>
   );
 }

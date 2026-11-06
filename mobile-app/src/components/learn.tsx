@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Linking } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { useAppTheme } from '../lib/ThemeContext'; // THEME HOOK
+import { useAppTheme } from '../lib/ThemeContext';
 import {
   DownloadedStudyPack,
   getAllDownloadedPacks,
@@ -31,7 +31,7 @@ const hashString = (text: string) => {
 const getSubjectIcon = (name: string) => {
   const n = name.toLowerCase();
   if (/cook|food|kitchen|culinary|bak(e|ing)|nutrition/.test(n)) return 'restaurant';
-  if (/math|numer|algebra|geometry|arithmetic/.test(n)) return 'calculator';
+  if (/math|numer|algebra|geometry|arithmetic|stat|probab/.test(n)) return 'calculator';
   if (/english|filipino|communicat|language|literacy|reading|writing/.test(n)) return 'chatbubbles';
   if (/science|biolog|chemi|physics/.test(n)) return 'flask';
   if (/social|history|civic|govern|geograph/.test(n)) return 'earth';
@@ -39,16 +39,41 @@ const getSubjectIcon = (name: string) => {
   return FALLBACK_ICONS[hashString(n) % FALLBACK_ICONS.length];
 };
 
+interface WeekModuleItem {
+  id: string;
+  weekLabel: string;
+  moduleTitle: string;
+}
+
+interface SubjectGroup {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  modules: string[];
+  weeks: WeekModuleItem[];
+}
+
+interface QuizGradeRecord {
+  id: string;
+  module_title: string;
+  score: number;
+  total_items: number;
+  created_at?: string;
+}
+
 export default function LearnScreen() {
   const { theme } = useAppTheme();
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
   const [selectedToolRoute, setSelectedToolRoute] = useState('');
-  const [expandedSubjectId, setExpandedSubjectId] = useState<any | null>(null);
+  const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null);
+  const [expandedGradeSubjectId, setExpandedGradeSubjectId] = useState<string | null>(null);
 
-  const [recommendation, setRecommendation] = useState<{ target_module: string, rationale: string } | null>(null);
+  const [recommendation, setRecommendation] = useState<{ target_module: string; rationale: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [subjects, setSubjects] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<SubjectGroup[]>([]);
+  const [quizGrades, setQuizGrades] = useState<QuizGradeRecord[]>([]);
 
   // --- Offline Pack States ---
   const [downloadModalVisible, setDownloadModalVisible] = useState(false);
@@ -61,9 +86,14 @@ export default function LearnScreen() {
 
   useEffect(() => {
     fetchAIRecommendation();
-    fetchDatabaseModules();
     loadDownloadableLessons();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDatabaseModulesAndGrades();
+    }, [])
+  );
 
   const fetchAIRecommendation = async () => {
     try {
@@ -71,27 +101,32 @@ export default function LearnScreen() {
       if (!user) return;
 
       const response = await fetch(`${API_BASE_URL}/api/ai-recommendation/${user.id}`);
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.indexOf("application/json") !== -1) {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.indexOf('application/json') !== -1) {
         const data = await response.json();
         setRecommendation(data);
       } else {
         setRecommendation(null);
       }
     } catch (error) {
-      console.error("Failed to load AI recommendation:", error);
+      console.error('Failed to load AI recommendation:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchDatabaseModules = async () => {
+  const fetchDatabaseModulesAndGrades = async () => {
     try {
-      const { data, error } = await supabase.from('ai_lessons').select('id, title, parsed_content');
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { data, error } = await supabase
+        .from('ai_lessons')
+        .select('id, title, subtitle, parsed_content, created_at')
+        .order('created_at', { ascending: true });
       if (error) throw error;
 
       if (data) {
-        const grouped = new Map<string, { id: string; name: string; icon: string; color: string; modules: string[] }>();
+        const grouped = new Map<string, SubjectGroup>();
 
         data.forEach((row: any) => {
           const name = (row.title || '').trim() || 'Untitled Subject';
@@ -104,10 +139,22 @@ export default function LearnScreen() {
                   .filter(Boolean)
               : [];
 
+          const modTitle =
+            row.parsed_content?.module_title ||
+            row.subtitle ||
+            lessonTitles[0] ||
+            name;
+
           const existing = grouped.get(key);
           if (existing) {
             lessonTitles.forEach((t) => {
               if (!existing.modules.includes(t)) existing.modules.push(t);
+            });
+            const weekNum = existing.weeks.length + 1;
+            existing.weeks.push({
+              id: String(row.id),
+              weekLabel: `Week ${weekNum}`,
+              moduleTitle: modTitle,
             });
           } else {
             grouped.set(key, {
@@ -116,6 +163,13 @@ export default function LearnScreen() {
               icon: getSubjectIcon(name),
               color: SUBJECT_COLORS[hashString(key) % SUBJECT_COLORS.length],
               modules: [...lessonTitles],
+              weeks: [
+                {
+                  id: String(row.id),
+                  weekLabel: 'Week 1',
+                  moduleTitle: modTitle,
+                },
+              ],
             });
           }
         });
@@ -126,10 +180,42 @@ export default function LearnScreen() {
         }));
 
         setSubjects(dynamicSubjects);
+        if (dynamicSubjects.length > 0 && !expandedGradeSubjectId) {
+          setExpandedGradeSubjectId(dynamicSubjects[0].id);
+        }
+      }
+
+      if (user) {
+        const { data: gradesData, error: gradesErr } = await supabase
+          .from('quiz_grades')
+          .select('id, module_title, score, total_items, created_at')
+          .eq('student_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!gradesErr && gradesData) {
+          setQuizGrades(gradesData);
+        }
       }
     } catch (error) {
-      console.error("Error fetching dynamic modules:", error);
+      console.error('Error fetching dynamic modules and grades:', error);
     }
+  };
+
+  const findGradeForWeek = (subjectName: string, moduleTitle: string, isOnlyWeek: boolean): QuizGradeRecord | undefined => {
+    const norm = (s: string) => (s || '').trim().toLowerCase();
+    const compositeKey = `${norm(subjectName)} - ${norm(moduleTitle)}`;
+
+    // 1. Check exact module title or composite "Subject - Module" key
+    const exactMatch = quizGrades.find(
+      (g) => norm(g.module_title) === norm(moduleTitle) || norm(g.module_title) === compositeKey
+    );
+    if (exactMatch) return exactMatch;
+
+    // 2. Fallback to subject-level grade if recorded under the subject name
+    if (isOnlyWeek || norm(moduleTitle) === norm(subjectName)) {
+      return quizGrades.find((g) => norm(g.module_title) === norm(subjectName));
+    }
+    return undefined;
   };
 
   const loadDownloadableLessons = async () => {
@@ -290,36 +376,98 @@ export default function LearnScreen() {
             </ScrollView>
           </View>
 
-          {/* Quizzes */}
+          {/* Quiz Grades (Per Subject & Week) */}
           <View style={styles.sectionContainer}>
-            <Text style={[styles.sectionTitlePad, { color: theme.textPrimary }]}>Quizzes</Text>
-            <Text style={[styles.sectionSubtitlePad, { color: theme.textSecondary }]}>Check in on your pending evaluations</Text>
+            <Text style={[styles.sectionTitlePad, { color: theme.textPrimary }]}>Quiz Grades</Text>
+            <Text style={[styles.sectionSubtitlePad, { color: theme.textSecondary }]}>
+              View your completed assessment scores across all weeks. Complete all lessons in a module to unlock its quiz.
+            </Text>
 
-            <TouchableOpacity
-              style={[styles.actionCard, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}
-              activeOpacity={0.8}
-              onPress={() => {
-                const currentSubject = subjects[0]?.name || 'Cookery & Food Safety';
-                Alert.alert(
-                  "Assessment Readiness",
-                  "This 15-item evaluation can only be taken ONCE. Your final score will be permanently recorded.\n\nHave you fully reviewed the module, or would you like to practice first?",
-                  [
-                    { text: "Practice First", onPress: () => router.push({ pathname: '/practice', params: { subject: currentSubject } } as any) },
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Start Evaluation", onPress: () => router.push({ pathname: '/quiz', params: { subject: currentSubject } }), style: "destructive" }
-                  ]
-                );
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>Module 1 Assessment</Text>
-                <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>Cookery & Food Safety • 15 Mins</Text>
-              </View>
-              <View style={[styles.startButton, theme.isDark && { backgroundColor: '#1d4ed8' }]}>
-                <Text style={styles.startButtonText}>Start</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color={theme.textSecondary} style={{ marginLeft: 10 }} />
-            </TouchableOpacity>
+            <View style={styles.gradesListContainer}>
+              {subjects.length === 0 ? (
+                <View style={[styles.emptyGradeBox, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
+                  <Text style={{ color: theme.textSecondary, fontSize: 14 }}>No subjects available yet.</Text>
+                </View>
+              ) : (
+                subjects.map((subject) => {
+                  const isExpanded = expandedGradeSubjectId === subject.id;
+                  const completedCount = subject.weeks.filter((w) =>
+                    Boolean(findGradeForWeek(subject.name, w.moduleTitle, subject.weeks.length === 1))
+                  ).length;
+
+                  return (
+                    <View
+                      key={subject.id}
+                      style={[styles.gradeSubjectCard, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}
+                    >
+                      <TouchableOpacity
+                        style={styles.gradeSubjectHeader}
+                        activeOpacity={0.7}
+                        onPress={() => setExpandedGradeSubjectId(isExpanded ? null : subject.id)}
+                      >
+                        <View style={[styles.gradeIconBox, { backgroundColor: subject.color + '18' }]}>
+                          <Ionicons name={subject.icon as any} size={22} color={subject.color} />
+                        </View>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={[styles.cardTitle, { color: theme.textPrimary, marginBottom: 2 }]}>{subject.name}</Text>
+                          <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
+                            {completedCount} of {subject.weeks.length} {subject.weeks.length === 1 ? 'Week' : 'Weeks'} Graded
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color={theme.textSecondary}
+                        />
+                      </TouchableOpacity>
+
+                      {isExpanded && (
+                        <View style={[styles.weeksGradeList, { borderTopColor: theme.divider }]}>
+                          {subject.weeks.map((week) => {
+                            const grade = findGradeForWeek(subject.name, week.moduleTitle, subject.weeks.length === 1);
+                            const passed = grade ? grade.score >= grade.total_items / 2 : false;
+
+                            return (
+                              <View key={week.id} style={[styles.weekGradeRow, { borderBottomColor: theme.divider }]}>
+                                <View style={{ flex: 1, paddingRight: 12 }}>
+                                  <Text style={[styles.weekBadgeLabel, { color: subject.color }]}>{week.weekLabel}</Text>
+                                  <Text style={[styles.weekModuleTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                                    {week.moduleTitle}
+                                  </Text>
+                                </View>
+
+                                {grade ? (
+                                  <View
+                                    style={[
+                                      styles.scorePill,
+                                      { backgroundColor: passed ? '#10B98118' : '#EF444418' }
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name={passed ? 'checkmark-circle' : 'alert-circle'}
+                                      size={15}
+                                      color={passed ? '#10B981' : '#EF4444'}
+                                      style={{ marginRight: 4 }}
+                                    />
+                                    <Text style={[styles.scorePillText, { color: passed ? '#10B981' : '#EF4444' }]}>
+                                      {grade.score} / {grade.total_items}
+                                    </Text>
+                                  </View>
+                                ) : (
+                                  <View style={[styles.pendingPill, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}>
+                                    <Text style={[styles.pendingPillText, { color: theme.textSecondary }]}>Pending</Text>
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </View>
           </View>
 
           {/* Study Tools & Library */}
@@ -372,7 +520,7 @@ export default function LearnScreen() {
                       {subject.name}
                     </Text>
                     <Ionicons
-                      name={expandedSubjectId === subject.id ? "chevron-down" : "chevron-forward"}
+                      name={expandedSubjectId === subject.id ? 'chevron-down' : 'chevron-forward'}
                       size={20}
                       color={expandedSubjectId === subject.id ? subject.color : theme.textSecondary}
                     />
@@ -390,8 +538,8 @@ export default function LearnScreen() {
 
                             if (selectedToolRoute === 'resources') {
                               Alert.alert(
-                                "Online Resources",
-                                "No external links have been extracted for this module yet. This feature will be available once the backend extraction is updated."
+                                'Online Resources',
+                                'No external links have been extracted for this module yet. This feature will be available once the backend extraction is updated.'
                               );
                             } else {
                               router.push({
@@ -516,7 +664,7 @@ const styles = StyleSheet.create({
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', paddingHorizontal: 20, marginBottom: 15 },
   sectionTitlePad: { fontSize: 20, fontWeight: 'bold', paddingHorizontal: 20 },
-  sectionSubtitlePad: { fontSize: 13, paddingHorizontal: 20, marginTop: 4, marginBottom: 15 },
+  sectionSubtitlePad: { fontSize: 13, paddingHorizontal: 20, marginTop: 4, marginBottom: 15, lineHeight: 18 },
   sectionSubtitleWhite: { fontSize: 13, color: '#e0e8f9', paddingHorizontal: 20, marginBottom: 10, marginTop: -35, zIndex: 10 },
 
   horizontalScroll: { gap: 15, paddingHorizontal: 20 },
@@ -532,16 +680,27 @@ const styles = StyleSheet.create({
   largeIconContainer: { width: '100%', height: 90, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   subjectCardTitle: { fontSize: 14, fontWeight: 'bold', lineHeight: 20, textAlign: 'center' },
 
+  gradesListContainer: { paddingHorizontal: 20, gap: 12 },
+  emptyGradeBox: { padding: 20, borderRadius: 16, borderWidth: 1, alignItems: 'center' },
+  gradeSubjectCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
+  gradeSubjectHeader: { flexDirection: 'row', alignItems: 'center', padding: 16 },
+  gradeIconBox: { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  weeksGradeList: { borderTopWidth: 1, paddingHorizontal: 16, paddingBottom: 6 },
+  weekGradeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1 },
+  weekBadgeLabel: { fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  weekModuleTitle: { fontSize: 14, fontWeight: '600' },
+  scorePill: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+  scorePillText: { fontSize: 13, fontWeight: 'bold' },
+  pendingPill: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+  pendingPillText: { fontSize: 12, fontWeight: '600' },
+
   toolsGrid: { flexDirection: 'column', gap: 12, paddingHorizontal: 20 },
   toolCard: { width: '100%', borderRadius: 16, paddingVertical: 15, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', borderWidth: 1, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
   toolIconWrapper: { backgroundColor: '#f0f4ff', padding: 10, borderRadius: 10, marginRight: 15 },
   toolText: { fontSize: 16, fontWeight: '600', flex: 1 },
 
-  actionCard: { marginHorizontal: 20, borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
   cardSubtitle: { fontSize: 13 },
-  startButton: { backgroundColor: '#2e64e5', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 10 },
-  startButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { width: '100%', borderRadius: 24, padding: 25, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 15 },

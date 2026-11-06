@@ -99,7 +99,7 @@ async function generateWithRetry(contents, config, maxAttempts = 4) {
   throw lastError;
 }
 
-// Register automatic background flashcard (10) + practice pool (20) generator
+// Register on-demand flashcard (10) + practice pool (20) generator
 const studyMaterials = registerStudyMaterials(app, { supabase, admin: supabaseAdmin, ai });
 
 // --- 🟢 AI RECOMMENDATION ROUTE ---
@@ -125,6 +125,7 @@ app.get('/api/ai-recommendation/:userId', async (req, res) => {
       return res.status(404).json({ error: "No lessons have been uploaded yet." });
     }
 
+    // Use data-based rationale by default to save free-tier daily quota, or generate if quota allows
     let rationale = pick.fallbackRationale;
     try {
       const parsed = await generateWithRetry(
@@ -141,7 +142,7 @@ app.get('/api/ai-recommendation/:userId', async (req, res) => {
             required: ["rationale"]
           }
         },
-        2
+        1
       );
       if (typeof parsed?.rationale === 'string' && parsed.rationale.trim()) {
         rationale = parsed.rationale.trim();
@@ -190,7 +191,7 @@ app.get('/api/generate-flashcards', async (req, res) => {
         row.parsed_content.lessons.forEach(lesson => {
           const name = lessonName(lesson);
           if (wantAll || normTitle(name) === normTitle(moduleTitle)) {
-            contentToReview += `LESSON: ${name}\n${lesson.core_text ?? JSON.stringify(lesson)}\n\n`;
+            contentToReview += `LESSON: ${name}\n${lesson.core_text ?? lesson.full_module_text ?? JSON.stringify(lesson)}\n\n`;
           }
         });
       }
@@ -242,12 +243,20 @@ async function handleLessonUpload(req, res) {
     const parsedJsonData = await generateWithRetry(
       [
         pdfPart,
-        `Analyze the provided educational PDF and transform it into a structured, self-paced learning module. Follow these strict guidelines:
+        `Analyze the provided educational PDF and transform it into a structured, self-paced learning module for Alternative Learning System (ALS) students. Follow these strict guidelines:
 
-        1. 5-Part Structure: Divide the core instructional content sequentially into exactly 5 distinct learning sections.
-        2. Comprehensive Detail: Retain the depth of the original instructional concepts, explanations, and examples inside each section's "core_text" field (aim for 300 to 600 words of clear, complete teaching text per section so the output forms valid, complete JSON without truncating).
-        3. Knowledge Checks: Generate exactly 1 targeted comprehension or application question based on that specific section's content, placing it in the "knowledge_check_question" field.
-        4. Exclusions: Entirely skip and exclude any group activities, pair work, or collaborative classroom exercises mentioned in the original text.
+        1. 5-Part Structure: Divide the core instructional content sequentially into exactly 5 distinct learning sections (lessons).
+        2. AI Overview & Key Concepts: For each lesson, provide:
+           - "overview_title": A concise title for the AI summary card.
+           - "overview_body": A clear 3-5 sentence summary explaining the core takeaway of the section.
+           - "key_concepts": An array of 2 to 4 key concepts, each with "concept_title" and "concept_body".
+        3. Full Module Text: Provide comprehensive instructional explanations, examples, and step-by-step teaching content inside "full_module_text" (and copy the same text to "core_text" for backward compatibility, aiming for 300 to 500 words per section).
+        4. Interactive Activity: For each lesson, create an "activity" object with:
+           - "activity_type": "multiple_choice"
+           - "question_prompt": A clear comprehension or application question based on that lesson.
+           - "options": An array of 4 distinct answer choices.
+           - "correct_answer": Must match one of the 4 strings in "options" EXACTLY.
+        5. Exclusions: Entirely skip and exclude any group activities, pair work, or classroom exercises.
 
         Output ONLY a valid JSON object matching the requested schema.`
       ],
@@ -269,10 +278,47 @@ async function handleLessonUpload(req, res) {
                   lesson_title: { type: Type.STRING },
                   duration_minutes: { type: Type.INTEGER },
                   type: { type: Type.STRING },
+                  overview_title: { type: Type.STRING },
+                  overview_body: { type: Type.STRING },
+                  key_concepts: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        concept_title: { type: Type.STRING },
+                        concept_body: { type: Type.STRING }
+                      },
+                      required: ["concept_title", "concept_body"]
+                    }
+                  },
+                  full_module_text: { type: Type.STRING },
                   core_text: { type: Type.STRING },
-                  knowledge_check_question: { type: Type.STRING }
+                  knowledge_check_question: { type: Type.STRING },
+                  activity: {
+                    type: Type.OBJECT,
+                    properties: {
+                      activity_type: { type: Type.STRING },
+                      question_prompt: { type: Type.STRING },
+                      options: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING }
+                      },
+                      correct_answer: { type: Type.STRING }
+                    },
+                    required: ["activity_type", "question_prompt", "options", "correct_answer"]
+                  }
                 },
-                required: ["lesson_title", "duration_minutes", "type", "core_text", "knowledge_check_question"]
+                required: [
+                  "lesson_title",
+                  "duration_minutes",
+                  "type",
+                  "overview_title",
+                  "overview_body",
+                  "key_concepts",
+                  "full_module_text",
+                  "core_text",
+                  "activity"
+                ]
               }
             }
           },
@@ -280,6 +326,17 @@ async function handleLessonUpload(req, res) {
         }
       }
     );
+
+    // Ensure core_text and full_module_text mirror each other if one is omitted
+    if (parsedJsonData && Array.isArray(parsedJsonData.lessons)) {
+      parsedJsonData.lessons = parsedJsonData.lessons.map((lesson) => ({
+        ...lesson,
+        core_text: lesson.core_text || lesson.full_module_text || lesson.overview_body || '',
+        full_module_text: lesson.full_module_text || lesson.core_text || lesson.overview_body || '',
+        knowledge_check_question:
+          lesson.knowledge_check_question || lesson.activity?.question_prompt || '',
+      }));
+    }
 
     console.log("3. Pushing lesson to Supabase...");
     const rowPayload = [{
@@ -297,13 +354,14 @@ async function handleLessonUpload(req, res) {
     }
     if (error) throw new Error(`Supabase ai_lessons insert failed: ${error.message}`);
 
-    // 4. Queue background study material generation without blocking the upload response
-    Promise.resolve(studyMaterials.queueSubject(selectedSubject))
-      .catch((e) => console.error("Could not queue study materials:", errorText(e)));
+    // NOTE: Disabled automatic background queueing on upload to preserve free-tier daily quota (20 req/day).
+    // Study materials (Flashcards & Practice Pool) will generate on-demand when a student opens them and then stay cached in Supabase.
+    // Promise.resolve(studyMaterials.queueSubject(selectedSubject))
+    //   .catch((e) => console.error("Could not queue study materials:", errorText(e)));
 
     res.json({
       success: true,
-      message: `✅ Success! Lesson added to ${selectedSubject}. Flashcards (10) and Practice Pool (20) are generating automatically in the background.`
+      message: `✅ Success! Lesson added to ${selectedSubject}. Study materials will generate on-demand when opened.`
     });
 
   } catch (error) {
@@ -324,5 +382,5 @@ registerAssessmentRoutes(app, { supabase, ai, studyMaterials });
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Backend running on port ${PORT}`));
 
-// Automatically backfill 10 flashcards + 20 practice questions for any existing lessons
-//studyMaterials.startBackfill();
+// Keep backfill disabled on free tier to avoid exhausting daily quota on server boot
+// studyMaterials.startBackfill();
