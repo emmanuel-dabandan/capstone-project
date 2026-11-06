@@ -55,7 +55,7 @@ export default function TeacherUpload() {
     });
 
     try {
-      const backendUrl = 'https://glorious-happiness-x5955j7qpxqgfp4p9-3000.app.github.dev/api/upload';
+      const backendUrl = 'https://capstone-project-7vpt.onrender.com/api/upload-lesson';
 
       const response = await fetch(backendUrl, {
         method: 'POST',
