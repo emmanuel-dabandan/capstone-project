@@ -2,8 +2,8 @@
 import { randomUUID } from 'crypto';
 import { Type } from '@google/genai';
 
-export const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.1-flash').trim();
-const DEFAULT_FALLBACK_MODELS = ['gemini-3.7-flash', 'gemini-3-flash', 'gemini-3.1-flash-lite'];
+export const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+const DEFAULT_FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
 const QUIZ_QUESTION_COUNT = 15;
 const PRACTICE_POOL_COUNT = 20;  // 20 questions generated per pool
@@ -13,7 +13,7 @@ const MAX_CONTENT_CHARS = 60000;
 const MAX_ATTEMPTS = 4;
 const RETRY_BASE_MS = Number(process.env.GEMINI_RETRY_BASE_MS) || 2000;
 
-export const fallbackModel = () => (process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.1-flash-lite').trim();
+export const fallbackModel = () => (process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.5-flash-lite').trim();
 
 export function pickModelForAttempt(attempt = 1) {
   if (attempt <= 1) return GEMINI_MODEL;
