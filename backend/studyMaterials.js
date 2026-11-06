@@ -1,19 +1,9 @@
 // studyMaterials.js (put it next to server.js)
-//
-// Prepares flashcards (10) and a practice-question pool (20) for every lesson
-// IN THE BACKGROUND, stores them in the Supabase table `study_materials`, and
-// serves them instantly to the app.
-//
-// Routes supported:
-//   GET /api/study-materials?subjectTitle=<subject>&moduleTitle=<lesson>
-//   GET /api/study-materials?subjectTitle=<subject>          (whole subject, merged)
-//   GET /api/study-pack?subjectTitle=<subject>&moduleTitle=<lesson>
-
 import { createHash } from 'crypto';
 import { Type } from '@google/genai';
 import {
-  GEMINI_MODEL,
-  fallbackModel,
+  pickModelForAttempt,
+  parseJsonText,
   questionsSchema,
   cleanQuestions,
   cleanParam,
@@ -26,16 +16,16 @@ import {
   shuffle,
 } from './assessmentRoutes.js';
 
-const GENERATOR_VERSION = 'v1';        // bump to regenerate everything (e.g. new counts)
+const GENERATOR_VERSION = 'v1';
 export const FLASHCARD_COUNT = 10;
-export const PRACTICE_POOL_COUNT = 20; // Total generated & downloaded for offline use
-export const PRACTICE_SERVE_COUNT = 10; // Number of questions shown per practice attempt
+export const PRACTICE_POOL_COUNT = 20;
+export const PRACTICE_SERVE_COUNT = 10;
 
-const MIN_FLASHCARDS = 5;              // accept a bit less rather than fail
+const MIN_FLASHCARDS = 5;
 const MIN_PRACTICE = 10;
 const MAX_LESSON_CHARS = 30000;
-const SUBJECT_POOL_CAP = 60;           // whole-subject practice draws from all lessons
-const MAX_ON_DEMAND_LESSONS = 3;       // lessons generated while a student waits
+const SUBJECT_POOL_CAP = 60;
+const MAX_ON_DEMAND_LESSONS = 3;
 
 const MAX_ATTEMPTS = 4;
 const RETRY_BASE_MS = Number(process.env.GEMINI_RETRY_BASE_MS) || 2000;
@@ -66,8 +56,6 @@ export const materialSchema = {
   },
   required: ['flashcards', 'practice'],
 };
-
-// ---------- small helpers ----------
 
 export function cleanFlashcards(raw, limit = FLASHCARD_COUNT) {
   if (!Array.isArray(raw)) return [];
@@ -101,8 +89,6 @@ function dedupeQuestions(questions) {
   });
 }
 
-// ai_lessons rows are weeks; this flattens them into one entry per lesson
-// (lessons that share a title are merged so nothing is lost)
 function extractLessons(rows) {
   const lessons = new Map();
   (rows || []).forEach((row) => {
@@ -134,7 +120,6 @@ function extractLessons(rows) {
   return lessons;
 }
 
-// Takes questions turn by turn from each lesson so every lesson is represented
 function mergeRoundRobin(lists, cap) {
   const merged = [];
   const longest = Math.max(0, ...lists.map((l) => l.length));
@@ -161,8 +146,6 @@ const shape = (subject, module, row) => {
     practice_quiz: pickPracticeSubset(practicePool, PRACTICE_SERVE_COUNT),
   };
 };
-
-// ---------- Gemini ----------
 
 async function generateMaterial(ai, lesson) {
   let best = { flashcards: [], practice: [] };
@@ -194,21 +177,18 @@ async function generateMaterial(ai, lesson) {
          "practice":[{"question":"...","options":["A","B","C","D"],"correct_answer":"B"}]}
       `;
 
-      const model = attempt > 1 && fallbackModel() ? fallbackModel() : GEMINI_MODEL;
+      const model = pickModelForAttempt(attempt);
       const response = await ai.models.generateContent({
         model,
         contents: prompt,
         config: {
-          temperature: 0.8,
+          temperature: 0.7,
           responseMimeType: 'application/json',
           responseSchema: materialSchema,
         },
       });
 
-      const text = response.text;
-      if (!text) throw new Error('Gemini returned an empty response');
-
-      const parsed = JSON.parse(text);
+      const parsed = parseJsonText(response.text);
       const flashcards = cleanFlashcards(parsed.flashcards, FLASHCARD_COUNT);
       const practice = dedupeQuestions(cleanQuestions(parsed.practice, PRACTICE_POOL_COUNT * 2)).slice(
         0,
@@ -234,11 +214,10 @@ async function generateMaterial(ai, lesson) {
   throw lastError;
 }
 
-// ---------- routes + background worker ----------
-
 export function registerStudyMaterials(app, { supabase, admin, ai }) {
   const db = admin || supabase;
-  const inFlight = new Map(); // lesson id -> Promise (so two requests never generate twice)
+  const memoryStore = new Map(); // id -> row object fallback if study_materials table is missing
+  const inFlight = new Map();
   const queue = [];
   const queued = new Set();
   let currentRun = null;
@@ -252,7 +231,6 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
       if (exact.error) throw exact.error;
       rows = exact.data || [];
       if (rows.length === 0) {
-        // Title may differ by case/spaces: look through all subjects
         const all = await select();
         if (all.error) throw all.error;
         rows = (all.data || []).filter((r) => normTitle(r.title) === normTitle(subjectTitle));
@@ -266,17 +244,38 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
   }
 
   async function readStored(lesson) {
-    const { data, error } = await db
-      .from(TABLE)
-      .select('*')
-      .eq('subject_key', lesson.subjectKey)
-      .eq('lesson_key', lesson.lessonKey)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
+    const mem = memoryStore.get(lesson.id);
+    try {
+      const { data, error } = await db
+        .from(TABLE)
+        .select('*')
+        .eq('subject_key', lesson.subjectKey)
+        .eq('lesson_key', lesson.lessonKey)
+        .maybeSingle();
+      if (!error && data) {
+        const normalized = {
+          ...data,
+          practice_pool: data.practice_pool || data.practice_questions || [],
+        };
+        memoryStore.set(lesson.id, normalized);
+        return normalized;
+      }
+    } catch (_) {}
+    return mem || null;
   }
 
-  // Returns the stored row if it is up to date, otherwise generates + stores it
+  async function writeStored(lesson, row) {
+    memoryStore.set(lesson.id, row);
+    try {
+      const { error } = await db.from(TABLE).upsert(row, { onConflict: 'subject_key,lesson_key' });
+      if (error) {
+        console.warn(`⚠️ study_materials DB upsert skipped (${error.message}) — kept in memory cache.`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ study_materials DB upsert failed (${e.message}) — kept in memory cache.`);
+    }
+  }
+
   function ensureMaterial(lesson) {
     if (inFlight.has(lesson.id)) return inFlight.get(lesson.id);
 
@@ -295,8 +294,7 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
         practice_pool: generated.practice,
         generated_at: new Date().toISOString(),
       };
-      const { error } = await db.from(TABLE).upsert(row, { onConflict: 'subject_key,lesson_key' });
-      if (error) throw error;
+      await writeStored(lesson, row);
       return row;
     })().finally(() => inFlight.delete(lesson.id));
 
@@ -316,9 +314,6 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
             console.log(`✅ Study material ready: ${lesson.subject} / ${lesson.module}`);
           } catch (error) {
             console.error(`❌ Study material failed: ${lesson.subject} / ${lesson.module}:`, errorText(error));
-            if (error?.code === '42P01' || error?.code === 'PGRST205') {
-              console.error('👉 The study_materials table is missing. Run study_materials.sql in Supabase.');
-            }
           }
           if (queue.length > 0 && GAP_BETWEEN_JOBS_MS > 0) await sleep(GAP_BETWEEN_JOBS_MS);
         }
@@ -341,13 +336,23 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
     return added;
   }
 
-  // Queues every lesson (optionally only one subject) that has no up-to-date material
   async function queueMissing(subjectTitle) {
     const lessons = [...(await loadLessons(subjectTitle)).values()];
-    const { data, error } = await db.from(TABLE).select('subject_key, lesson_key, content_hash');
-    if (error) throw error;
+    const have = new Map();
 
-    const have = new Map((data || []).map((r) => [`${r.subject_key}|${r.lesson_key}`, r.content_hash]));
+    // Seed from memory store first
+    for (const [id, row] of memoryStore.entries()) {
+      have.set(id, row.content_hash);
+    }
+
+    // Check database table if available
+    try {
+      const { data, error } = await db.from(TABLE).select('subject_key, lesson_key, content_hash');
+      if (!error && Array.isArray(data)) {
+        data.forEach((r) => have.set(`${r.subject_key}|${r.lesson_key}`, r.content_hash));
+      }
+    } catch (_) {}
+
     const missing = lessons.filter((l) => have.get(l.id) !== l.hash);
     if (missing.length > 0) console.log(`📚 Preparing study material for ${missing.length} lesson(s)...`);
     return enqueue(missing);
@@ -357,9 +362,6 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
     const scan = () =>
       queueMissing().catch((error) => {
         console.error('Study material scan failed:', errorText(error));
-        if (error?.code === '42P01' || error?.code === 'PGRST205') {
-          console.error('👉 The study_materials table is missing. Run study_materials.sql in Supabase.');
-        }
       });
     const first = setTimeout(scan, FIRST_SCAN_DELAY_MS);
     const repeat = setInterval(scan, SCAN_EVERY_MS);
@@ -373,9 +375,6 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
 
   function sendError(res, error) {
     console.error('Study material request failed:', errorText(error));
-    if (error?.code === '42P01' || error?.code === 'PGRST205') {
-      console.error('👉 The study_materials table is missing. Run study_materials.sql in Supabase.');
-    }
     if (isRateLimited(error)) {
       return res.status(429).json({ error: 'The AI is busy right now. Please wait a minute and try again.' });
     }
@@ -397,7 +396,6 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
       const subjectName = lessons[0].subject;
       const wantAll = !moduleTitle || normTitle(moduleTitle) === normTitle(subjectTitle);
 
-      // ----- one lesson -----
       if (!wantAll) {
         const lesson = lessons.find((l) => l.lessonKey === normTitle(moduleTitle));
         if (!lesson) return res.status(404).json({ error: 'Specific module content not found.' });
@@ -405,14 +403,21 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
         return res.json(shape(lesson.subject, lesson.module, row));
       }
 
-      // ----- whole subject: merge the lessons that are ready -----
-      const { data: storedRows, error } = await db
-        .from(TABLE)
-        .select('*')
-        .eq('subject_key', lessons[0].subjectKey);
-      if (error) throw error;
+      const storedById = new Map();
+      for (const [id, row] of memoryStore.entries()) {
+        if (row.subject_key === lessons[0].subjectKey) storedById.set(id, row);
+      }
 
-      const storedById = new Map((storedRows || []).map((r) => [`${r.subject_key}|${r.lesson_key}`, r]));
+      try {
+        const { data: storedRows, error } = await db
+          .from(TABLE)
+          .select('*')
+          .eq('subject_key', lessons[0].subjectKey);
+        if (!error && Array.isArray(storedRows)) {
+          storedRows.forEach((r) => storedById.set(`${r.subject_key}|${r.lesson_key}`, r));
+        }
+      } catch (_) {}
+
       const ready = new Map();
       const notReady = [];
       lessons.forEach((lesson) => {
@@ -421,7 +426,7 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
         else notReady.push(lesson);
       });
 
-      enqueue(notReady); // the rest keeps being prepared in the background
+      enqueue(notReady);
 
       const poolSize = () => [...ready.values()].reduce((n, r) => n + (r.practice_pool || []).length, 0);
       let generatedNow = 0;
@@ -460,11 +465,9 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
     }
   }
 
-  // Register both routes so legacy and updated clients work seamlessly
   app.get('/api/study-materials', handleStudyMaterialRequest);
   app.get('/api/study-pack', handleStudyMaterialRequest);
 
-  // Lesson object in the same shape extractLessons() builds
   function makeLesson(subject, module, text) {
     const subjectKey = normTitle(subject);
     const lessonKey = normTitle(module);
@@ -480,18 +483,23 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
     };
   }
 
-  // Stored flashcards/practice for one lesson, or merged across the subject when no lesson is given.
-  // Returns null when nothing is stored yet.
   async function getStoredMaterials(subjectTitle, moduleTitle) {
     const subjectKey = normTitle(subjectTitle);
     const lessonKey = normTitle(moduleTitle);
 
     if (!lessonKey || lessonKey === subjectKey) {
-      const { data, error } = await db.from(TABLE).select('*').eq('subject_key', subjectKey);
-      if (error) throw error;
-      if (!data || data.length === 0) return null;
-      const flashcards = mergeRoundRobin(data.map((r) => r.flashcards || []), 30);
-      const practice_pool = mergeRoundRobin(data.map((r) => r.practice_pool || []), SUBJECT_POOL_CAP);
+      let rows = [...memoryStore.values()].filter((r) => r.subject_key === subjectKey);
+      try {
+        const { data, error } = await db.from(TABLE).select('*').eq('subject_key', subjectKey);
+        if (!error && Array.isArray(data) && data.length > 0) rows = data;
+      } catch (_) {}
+
+      if (rows.length === 0) return null;
+      const flashcards = mergeRoundRobin(rows.map((r) => r.flashcards || []), 30);
+      const practice_pool = mergeRoundRobin(
+        rows.map((r) => r.practice_pool || r.practice_questions || []),
+        SUBJECT_POOL_CAP
+      );
       return {
         flashcards,
         practice_pool,
@@ -499,23 +507,26 @@ export function registerStudyMaterials(app, { supabase, admin, ai }) {
       };
     }
 
-    const { data, error } = await db
-      .from(TABLE)
-      .select('*')
-      .eq('subject_key', subjectKey)
-      .eq('lesson_key', lessonKey)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return null;
-    return {
-      ...data,
-      practice_questions: data.practice_pool || [],
-    };
+    const id = `${subjectKey}|${lessonKey}`;
+    try {
+      const { data, error } = await db
+        .from(TABLE)
+        .select('*')
+        .eq('subject_key', subjectKey)
+        .eq('lesson_key', lessonKey)
+        .maybeSingle();
+      if (!error && data) {
+        const pool = data.practice_pool || data.practice_questions || [];
+        return { ...data, practice_pool: pool, practice_questions: pool };
+      }
+    } catch (_) {}
+
+    const mem = memoryStore.get(id);
+    if (!mem) return null;
+    const pool = mem.practice_pool || mem.practice_questions || [];
+    return { ...mem, practice_pool: pool, practice_questions: pool };
   }
 
-  // Used when nothing is stored yet. A single lesson is generated AND saved for next time.
-  // A whole subject is generated from the combined text and returned (each lesson is saved
-  // separately by the background job).
   async function ensureMaterials(subjectTitle, moduleTitle, contentText) {
     const subjectKey = normTitle(subjectTitle);
     const lessonKey = normTitle(moduleTitle);
