@@ -21,7 +21,7 @@ import { registerStudyMaterials } from './studyMaterials.js';
 
 dotenv.config();
 
-// Ensure uploads folder always exists
+// Ensure uploads folder always exists (optional with memory storage, but safe to keep)
 fs.mkdirSync('uploads', { recursive: true });
 
 const app = express();
@@ -32,8 +32,9 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 
+// Use memory storage to prevent filesystem errors on cloud platforms like Render
 const upload = multer({
-  dest: 'uploads/',
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
 });
 
@@ -96,48 +97,6 @@ async function generateWithRetry(contents, config, maxAttempts = 4) {
     }
   }
   throw lastError;
-}
-
-// Prepare PDF part for Gemini: uses inlineData for PDFs <= 18MB (fast, zero File API state issues),
-// and falls back to File API upload + ACTIVE state polling for larger files.
-async function buildPdfContentPart(filePath) {
-  const stats = fs.statSync(filePath);
-  const maxInlineBytes = 18 * 1024 * 1024; // 18 MB
-
-  if (stats.size <= maxInlineBytes) {
-    const base64Data = fs.readFileSync(filePath).toString('base64');
-    return {
-      inlineData: {
-        mimeType: 'application/pdf',
-        data: base64Data,
-      },
-    };
-  }
-
-  const uploadFn = ai.files?.upload ? ai.files.upload.bind(ai.files) : ai.upload.bind(ai);
-  let uploaded = await uploadFn({
-    file: filePath,
-    config: { mimeType: 'application/pdf' },
-  });
-
-  // Wait if the file is still processing
-  let polls = 0;
-  while (uploaded?.state === 'PROCESSING' && polls < 15) {
-    await sleep(2000);
-    if (ai.files?.get && uploaded.name) {
-      uploaded = await ai.files.get({ name: uploaded.name });
-    } else {
-      break;
-    }
-    polls++;
-  }
-
-  return {
-    fileData: {
-      mimeType: 'application/pdf',
-      fileUri: uploaded.uri,
-    },
-  };
 }
 
 // Register automatic background flashcard (10) + practice pool (20) generator
@@ -255,12 +214,12 @@ app.get('/api/generate-flashcards', async (req, res) => {
   }
 });
 
-// --- 🟢 PDF UPLOAD HANDLER (Supports both /api/upload-lesson and /api/upload) ---
+// --- 🟢 PDF UPLOAD HANDLER (Memory Buffer Based) ---
 async function handleLessonUpload(req, res) {
   const uploadedFile = req.file || (Array.isArray(req.files) && req.files[0]);
 
   try {
-    if (!uploadedFile) {
+    if (!uploadedFile || !uploadedFile.buffer) {
       return res.status(400).json({ success: false, error: "No PDF file was received in the request." });
     }
     if (!geminiKey) {
@@ -270,9 +229,14 @@ async function handleLessonUpload(req, res) {
     const selectedSubject = (req.body?.subject || req.body?.title || 'Uncategorized').trim();
 
     console.log(`--- UPLOADING MODULE FOR: ${selectedSubject} ---`);
-    console.log(`1. Preparing PDF (${uploadedFile.originalname}, ${uploadedFile.size} bytes)...`);
+    console.log(`1. Preparing PDF (${uploadedFile.originalname}, ${uploadedFile.size} bytes) in memory...`);
 
-    const pdfPart = await buildPdfContentPart(uploadedFile.path);
+    const pdfPart = {
+      inlineData: {
+        mimeType: 'application/pdf',
+        data: uploadedFile.buffer.toString('base64'),
+      },
+    };
 
     console.log("2. Parsing PDF with Gemini (with model fallback & retry protection)...");
     const parsedJsonData = await generateWithRetry(
@@ -337,8 +301,6 @@ async function handleLessonUpload(req, res) {
     Promise.resolve(studyMaterials.queueSubject(selectedSubject))
       .catch((e) => console.error("Could not queue study materials:", errorText(e)));
 
-    if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
-
     res.json({
       success: true,
       message: `✅ Success! Lesson added to ${selectedSubject}. Flashcards (10) and Practice Pool (20) are generating automatically in the background.`
@@ -346,9 +308,6 @@ async function handleLessonUpload(req, res) {
 
   } catch (error) {
     console.error("❌ UPLOAD-LESSON ERROR:", error);
-    if (uploadedFile && fs.existsSync(uploadedFile.path)) {
-      try { fs.unlinkSync(uploadedFile.path); } catch (_) {}
-    }
     res.status(500).json({
       success: false,
       error: errorText(error) || "Failed to upload and parse lesson."
