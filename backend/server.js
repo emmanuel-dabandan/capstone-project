@@ -325,4 +325,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Backend running on port ${PORT}`));
 
 // Automatically backfill 10 flashcards + 20 practice questions for any existing lessons
-studyMaterials.startBackfill();
+//studyMaterials.startBackfill();
