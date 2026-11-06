@@ -247,9 +247,9 @@ async function handleLessonUpload(req, res) {
 
         1. 5-Part Structure: Divide the core instructional content sequentially into exactly 5 distinct learning sections (lessons).
         2. AI Overview & Key Concepts: For each lesson, provide:
-           - "overview_title": A concise title for the AI summary card.
-           - "overview_body": A clear 3-5 sentence summary explaining the core takeaway of the section.
-           - "key_concepts": An array of 2 to 4 key concepts, each with "concept_title" and "concept_body".
+                   - "overview_title": A concise title for the AI summary card.
+                   - "overview_body": A short 2-3 sentence executive summary explaining the core takeaway of the section.
+                   - "key_concepts": Break the section's key ideas into 3 to 5 distinct concepts depending on how broad or detailed the section's scope is (3 for focused topics, 4 for moderate scope, 5 for dense/multi-part topics), each with a short "concept_title" and clear 1-3 sentence "concept_body".
         3. Full Module Text: Provide comprehensive instructional explanations, examples, and step-by-step teaching content inside "full_module_text" (and copy the same text to "core_text" for backward compatibility, aiming for 300 to 500 words per section).
         4. Interactive Activity: For each lesson, create an "activity" object with:
            - "activity_type": "multiple_choice"
