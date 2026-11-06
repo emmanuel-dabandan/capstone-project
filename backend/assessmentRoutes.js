@@ -1,4 +1,4 @@
-// assessmentRoutes.js (put it next to server.js)
+// assessmentRoutes.js  (put it next to server.js)
 import { randomUUID } from 'crypto';
 import { Type } from '@google/genai';
 
@@ -13,7 +13,7 @@ const MAX_CONTENT_CHARS = 60000;
 const MAX_ATTEMPTS = 4;
 const RETRY_BASE_MS = Number(process.env.GEMINI_RETRY_BASE_MS) || 2000;
 
-export const fallbackModel = () => (process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.7-flash').trim();
+export const fallbackModel = () => (process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.1-flash-lite').trim();
 
 export function pickModelForAttempt(attempt = 1) {
   if (attempt <= 1) return GEMINI_MODEL;
@@ -28,7 +28,7 @@ export function parseJsonText(rawText) {
   const cleaned = String(rawText ?? '')
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\$/i, '')
+    .replace(/\s*```$/i, '')
     .trim();
   if (!cleaned) throw new Error('Gemini returned an empty response');
   return JSON.parse(cleaned);
@@ -288,3 +288,4 @@ export function registerAssessmentRoutes(app, { supabase, ai, studyMaterials }) 
       sendGenerationError(res, error, 'Could not generate practice questions. Please try again.');
     }
   });
+}
