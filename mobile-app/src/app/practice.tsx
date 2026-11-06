@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../lib/config';
+import { useAppTheme } from '../lib/ThemeContext';
 
 type PracticeQuestion = {
   question: string;
@@ -11,11 +12,8 @@ type PracticeQuestion = {
   correct_answer: string;
 };
 
-// Render's free tier can take ~1 minute to wake up, and Gemini needs time to generate,
-// but we should still never hang forever on a dead server
 const PRACTICE_TIMEOUT_MS = 90000;
 
-// Drops malformed questions instead of crashing on them
 const isValidQuestion = (q: any): q is PracticeQuestion =>
   !!q &&
   typeof q.question === 'string' &&
@@ -27,13 +25,13 @@ const sameAnswer = (a: string, b: string) =>
   a.trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
 
 export default function PracticeScreen() {
+  const { theme } = useAppTheme();
   const { subject, module } = useLocalSearchParams<{ subject: string, module: string }>();
 
   const [questions, setQuestions] = useState<PracticeQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🔴 Error state: shown instead of crashing when practice can't be loaded
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(true);
 
@@ -64,9 +62,6 @@ export default function PracticeScreen() {
     const timeoutId = setTimeout(() => controller.abort(), PRACTICE_TIMEOUT_MS);
 
     try {
-      // "Practice First" (from the assessment alert) sends only the subject, so we
-      // practise the whole subject. Only send moduleTitle when a module was picked,
-      // otherwise the server would look for a lesson literally named "undefined".
       let url = `${API_BASE_URL}/api/generate-practice?subjectTitle=${encodeURIComponent(subject)}`;
       if (module) url += `&moduleTitle=${encodeURIComponent(module)}`;
 
@@ -77,17 +72,12 @@ export default function PracticeScreen() {
 
       const contentType = response.headers.get('content-type') ?? '';
       if (!contentType.includes('application/json')) {
-        const preview = (await response.text()).slice(0, 120);
-        console.error(`Practice backend replied ${response.status} (${contentType}): ${preview}`);
         throw new Error('BACKEND_UNAVAILABLE');
       }
 
       const data = await response.json();
-
-      // Backend answered with JSON, but it's an error object instead of questions
       if (!Array.isArray(data)) {
         if (data?.error) {
-          console.warn(`Practice backend error (${response.status}):`, data.error);
           setQuestions([]);
           setErrorMessage(
             response.status === 404
@@ -141,21 +131,21 @@ export default function PracticeScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
         <ActivityIndicator size="large" color="#2e64e5" />
-        <Text style={styles.loadingText}>Generating Practice Session...</Text>
-        <Text style={styles.loadingSubtext}>The first request can take up to a minute.</Text>
+        <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Generating Practice Session...</Text>
+        <Text style={[styles.loadingSubtext, { color: theme.textSecondary }]}>The first request can take up to a minute.</Text>
       </View>
     );
   }
 
   if (practiceComplete) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.successContainer}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+        <View style={[styles.successContainer, { backgroundColor: theme.bg }]}>
           <Ionicons name="barbell" size={80} color="#2e64e5" />
-          <Text style={styles.successTitle}>Practice Complete!</Text>
-          <Text style={styles.successMessage}>You've successfully reviewed the core concepts for {module || subject}. Your gradebook remains unchanged.</Text>
+          <Text style={[styles.successTitle, { color: theme.textPrimary }]}>Practice Complete!</Text>
+          <Text style={[styles.successMessage, { color: theme.textSecondary }]}>You've successfully reviewed the core concepts for {module || subject}. Your gradebook remains unchanged.</Text>
 
           <TouchableOpacity style={styles.returnButton} onPress={() => router.back()}>
             <Text style={styles.returnButtonText}>Return to Library</Text>
@@ -165,14 +155,13 @@ export default function PracticeScreen() {
     );
   }
 
-  // 🔴 ERROR / EMPTY SCREEN
   const currentQ = questions[currentIndex];
   if (errorMessage || !currentQ) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingContainer}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
           <Ionicons name="alert-circle-outline" size={60} color="#f44336" />
-          <Text style={styles.loadingText}>
+          <Text style={[styles.loadingText, { color: theme.textPrimary }]}>
             {errorMessage ?? "We couldn't load your practice session. Please try again."}
           </Text>
 
@@ -193,22 +182,22 @@ export default function PracticeScreen() {
   const progressPercent = (currentIndex / questions.length) * 100;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-          <Ionicons name="close" size={28} color="#aaa" />
+          <Ionicons name="close" size={28} color={theme.textSecondary} />
         </TouchableOpacity>
-        <View style={styles.progressBarBg}>
+        <View style={[styles.progressBarBg, theme.isDark && { backgroundColor: '#334155' }]}>
           <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
         </View>
-        <View style={styles.practiceBadge}>
-          <Text style={styles.practiceBadgeText}>PRACTICE</Text>
+        <View style={[styles.practiceBadge, theme.isDark && { backgroundColor: '#1e3a8a', borderColor: '#3b82f6' }]}>
+          <Text style={[styles.practiceBadgeText, theme.isDark && { color: '#60a5fa' }]}>PRACTICE</Text>
         </View>
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.questionCounter}>QUESTION {currentIndex + 1} OF {questions.length}</Text>
-        <Text style={styles.questionPrompt}>{currentQ.question}</Text>
+        <Text style={[styles.questionCounter, { color: theme.textSecondary }]}>QUESTION {currentIndex + 1} OF {questions.length}</Text>
+        <Text style={[styles.questionPrompt, { color: theme.textPrimary }]}>{currentQ.question}</Text>
 
         <View style={styles.optionsContainer}>
           {currentQ.options.map((opt: string, idx: number) => {
@@ -218,7 +207,8 @@ export default function PracticeScreen() {
                 key={idx}
                 style={[
                   styles.optionButton,
-                  selectedAnswer === opt && styles.optionSelected,
+                  { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
+                  selectedAnswer === opt && [styles.optionSelected, theme.isDark && { backgroundColor: '#1e3a8a' }],
                   isSubmitted && selectedAnswer === opt && (isCorrect ? styles.optionCorrect : styles.optionIncorrect),
                   isSubmitted && isThisCorrect && !isCorrect && styles.optionCorrect
                 ]}
@@ -228,7 +218,8 @@ export default function PracticeScreen() {
               >
                 <Text style={[
                   styles.optionText,
-                  selectedAnswer === opt && styles.optionTextSelected,
+                  { color: theme.textPrimary },
+                  selectedAnswer === opt && [styles.optionTextSelected, theme.isDark && { color: '#60a5fa' }],
                   isSubmitted && (isThisCorrect || selectedAnswer === opt) && { color: '#ffffff' }
                 ]}>
                   {opt}
@@ -239,7 +230,7 @@ export default function PracticeScreen() {
         </View>
       </View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: theme.cardBg, borderTopColor: theme.borderColor }]}>
         {!isSubmitted ? (
           <TouchableOpacity
             style={[styles.submitButton, !selectedAnswer && styles.submitButtonDisabled]}
@@ -269,43 +260,37 @@ export default function PracticeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fcfaf8' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8', padding: 30 },
-  loadingText: { marginTop: 15, fontSize: 16, color: '#666', fontWeight: 'bold', textAlign: 'center' },
-  loadingSubtext: { marginTop: 8, fontSize: 13, color: '#aaa', fontWeight: '600', textAlign: 'center' },
+  safeArea: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  loadingText: { marginTop: 15, fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+  loadingSubtext: { marginTop: 8, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   backLink: { marginTop: 18, paddingVertical: 10, paddingHorizontal: 20 },
   backLinkText: { fontSize: 16, fontWeight: 'bold', color: '#2e64e5' },
-
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
   closeButton: { paddingRight: 15 },
   progressBarBg: { flex: 1, height: 12, backgroundColor: '#e0e8f9', borderRadius: 6, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: '#2e64e5', borderRadius: 6 },
   practiceBadge: { marginLeft: 15, backgroundColor: '#f0f4ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#d0ddff' },
   practiceBadgeText: { fontSize: 10, fontWeight: 'bold', color: '#2e64e5', letterSpacing: 1 },
-
   content: { flex: 1, paddingHorizontal: 20, paddingTop: 10 },
-  questionCounter: { fontSize: 13, fontWeight: 'bold', color: '#aaa', letterSpacing: 1, marginBottom: 10 },
-  questionPrompt: { fontSize: 22, fontWeight: 'bold', color: '#333', lineHeight: 30, marginBottom: 30 },
-
+  questionCounter: { fontSize: 13, fontWeight: 'bold', letterSpacing: 1, marginBottom: 10 },
+  questionPrompt: { fontSize: 22, fontWeight: 'bold', lineHeight: 30, marginBottom: 30 },
   optionsContainer: { gap: 12 },
-  optionButton: { padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#e0e8f9', backgroundColor: '#ffffff' },
+  optionButton: { padding: 18, borderRadius: 16, borderWidth: 2 },
   optionSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
-  optionText: { fontSize: 16, fontWeight: '600', color: '#333' },
+  optionText: { fontSize: 16, fontWeight: '600' },
   optionTextSelected: { color: '#2e64e5' },
   optionCorrect: { backgroundColor: '#4caf50', borderColor: '#4caf50' },
   optionIncorrect: { backgroundColor: '#f44336', borderColor: '#f44336' },
-
-  footer: { padding: 20, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#f0f4ff' },
+  footer: { padding: 20, borderTopWidth: 1 },
   submitButton: { backgroundColor: '#2e64e5', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
   submitButtonDisabled: { backgroundColor: '#a5c0ff' },
   submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
-
   feedbackContainer: { gap: 15 },
   feedbackText: { fontSize: 20, fontWeight: 'bold', textAlign: 'center' },
-
-  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#fcfaf8' },
-  successTitle: { fontSize: 28, fontWeight: '900', color: '#333', marginTop: 20, marginBottom: 10 },
-  successMessage: { fontSize: 16, color: '#666', textAlign: 'center', lineHeight: 24, marginBottom: 40 },
+  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  successTitle: { fontSize: 28, fontWeight: '900', marginTop: 20, marginBottom: 10 },
+  successMessage: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 40 },
   returnButton: { backgroundColor: '#2e64e5', paddingVertical: 18, paddingHorizontal: 40, borderRadius: 16, width: '100%', alignItems: 'center' },
   returnButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
 });

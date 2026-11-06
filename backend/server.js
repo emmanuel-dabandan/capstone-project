@@ -205,7 +205,13 @@ app.post('/api/upload-lesson', upload.single('pdf'), async (req, res) => {
     const parsedJsonData = await generateWithRetry(
       [
         { fileData: { mimeType: 'application/pdf', fileUri: uploadResult.uri } },
-        `Analyze this educational PDF and divide it into a structured learning module. Entirely skip any group activities and do not include them in your output.
+        `Analyze the provided educational PDF and transform it into a structured, self-paced learning module. Follow these strict guidelines:
+
+        1. 5-Part Structure: Divide the core instructional content sequentially into exactly 5 distinct learning sections.
+        2. Comprehensive Detail (Do Not Summarize): Retain the full depth of the original text, including detailed explanations, concepts, and examples. Do not condense or shorten the material into brief summaries; ensure each section provides a substantial, comprehensive reading experience within the "core_text" field.
+        3. Knowledge Checks: Generate exactly 1 targeted comprehension or application question based on that specific section's content, placing it in the "knowledge_check_question" field.
+        4. Exclusions: Entirely skip and exclude any group activities, pair work, or collaborative classroom exercises mentioned in the original text.
+
         Output ONLY a valid JSON object matching this exact schema:
         {
           "module_title": "Title of the overall subject/PDF",
@@ -214,9 +220,10 @@ app.post('/api/upload-lesson', upload.single('pdf'), async (req, res) => {
           "lessons": [
             {
               "lesson_title": "Name of the specific topic",
-              "duration_minutes": 5,
+              "duration_minutes": 15,
               "type": "reading",
-              "core_text": "The actual educational content goes here..."
+              "core_text": "The full, highly detailed educational content goes here without summarization...",
+              "knowledge_check_question": "The comprehension question based on this section goes here."
             }
           ]
         }`
@@ -238,8 +245,9 @@ app.post('/api/upload-lesson', upload.single('pdf'), async (req, res) => {
                   duration_minutes: { type: Type.INTEGER },
                   type: { type: Type.STRING },
                   core_text: { type: Type.STRING },
+                  knowledge_check_question: { type: Type.STRING }
                 },
-                required: ["lesson_title", "duration_minutes", "type", "core_text"]
+                required: ["lesson_title", "duration_minutes", "type", "core_text", "knowledge_check_question"]
               }
             }
           },

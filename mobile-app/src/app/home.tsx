@@ -1,17 +1,18 @@
 import React, { useRef, useState } from 'react';
-import { View, ScrollView, Dimensions, TouchableOpacity, Text, StyleSheet, Animated } from 'react-native';
+import { View, Dimensions, TouchableOpacity, Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAppTheme } from '../lib/ThemeContext';
 
-// 🟢 Import your screens from the new components folder
+// 🟢 Import your screens from the components folder
 import DashboardScreen from '../components/dashboard';
 import LearnScreen from '../components/learn';
 import SettingsScreen from '../components/settings';
 import StatsScreen from '../components/stats';
 
-
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
+  const { theme } = useAppTheme();
   const scrollRef = useRef<any>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -41,18 +42,18 @@ export default function HomeScreen() {
   ];
 
   const TAB_WIDTH = width / navItems.length;
-  const PILL_WIDTH = TAB_WIDTH; // 🟢 Removed the margin subtractions
+  const PILL_WIDTH = TAB_WIDTH;
 
   // 🟢 Interpolates scrollX into edge-to-edge horizontal movement
   const pillTranslateX = scrollX.interpolate({
     inputRange: [0, width * (navItems.length - 1)],
-    outputRange: [0, TAB_WIDTH * (navItems.length - 1)], // Starts at exactly 0
+    outputRange: [0, TAB_WIDTH * (navItems.length - 1)],
     extrapolate: 'clamp',
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fcfaf8' }}>
-      
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+
       {/* 🟠 The Master Swipe Container */}
       <Animated.ScrollView
         ref={scrollRef}
@@ -63,7 +64,7 @@ export default function HomeScreen() {
           [{ nativeEvent: { contentOffset: { x: scrollX } } }],
           { useNativeDriver: false, listener: handleScroll }
         )}
-        scrollEventThrottle={16} // Keeps the active state check running smoothly while swiping
+        scrollEventThrottle={16}
         bounces={false}
         style={{ flex: 1 }}
       >
@@ -71,32 +72,41 @@ export default function HomeScreen() {
         <View style={{ width, flex: 1 }}>
           <DashboardScreen />
         </View>
-        
+
         {/* Page 1: Learn */}
         <View style={{ width, flex: 1 }}>
           <LearnScreen />
         </View>
 
-        {/* Page 2: Stats (Placeholder) */}
+        {/* Page 2: Stats */}
         <View style={{ width, flex: 1 }}>
           <StatsScreen />
         </View>
 
-        {/* Page 3: Profile (Placeholder) */}
+        {/* Page 3: Profile / Settings */}
         <View style={{ width, flex: 1 }}>
           <SettingsScreen />
         </View>
       </Animated.ScrollView>
 
       {/* 🟠 Dynamic Bottom Nav */}
-      <View style={styles.bottomNav}>
-        
+      <View
+        style={[
+          styles.bottomNav,
+          {
+            backgroundColor: theme.cardBg,
+            borderTopColor: theme.borderColor,
+          },
+        ]}
+      >
+
         {/* 🟢 The Animated Sliding Pill */}
         <Animated.View
           style={[
             styles.slidingPill,
             {
               width: PILL_WIDTH,
+              backgroundColor: theme.headerBg,
               transform: [{ translateX: pillTranslateX }],
             },
           ]}
@@ -104,21 +114,27 @@ export default function HomeScreen() {
 
         {navItems.map((item) => {
           const isFocused = activeIndex === item.id;
-          
+
           return (
-            <TouchableOpacity 
-              key={item.id} 
-              onPress={() => goToPage(item.id)} 
+            <TouchableOpacity
+              key={item.id}
+              onPress={() => goToPage(item.id)}
               style={styles.navItem}
               activeOpacity={0.7}
             >
-              <Ionicons 
-                name={isFocused ? item.icon : item.outline as any} 
-                size={24} 
-                color={isFocused ? '#ffffff' : '#888888'} 
-                style={styles.iconMargin} 
+              <Ionicons
+                name={(isFocused ? item.icon : item.outline) as any}
+                size={24}
+                color={isFocused ? '#ffffff' : theme.navInactive}
+                style={styles.iconMargin}
               />
-              <Text style={isFocused ? styles.navTextActive : styles.navText}>
+              <Text
+                style={
+                  isFocused
+                    ? styles.navTextActive
+                    : [styles.navText, { color: theme.navInactive }]
+                }
+              >
                 {item.label}
               </Text>
             </TouchableOpacity>
@@ -130,31 +146,27 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  bottomNav: { 
-    height: 80, 
-    backgroundColor: '#ffffff', 
-    flexDirection: 'row', 
-    borderTopWidth: 1, 
-    borderTopColor: '#e0d8d0',
-    position: 'relative' // 🟢 Required so the sliding pill can float inside it
+  bottomNav: {
+    height: 80,
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    position: 'relative'
   },
   slidingPill: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: '#2e64e5',
     borderRadius: 0,
     zIndex: 0,
   },
-  navItem: { 
-    flex: 1, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    paddingBottom: 15, 
-    zIndex: 1 // 🟢 Keeps icons and text clickable and above the pill
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 15,
+    zIndex: 1
   },
-  navItemActive: { backgroundColor: '#2e64e5', borderRadius: 0, marginHorizontal: 0, marginTop: 0, marginBottom: 0, paddingVertical: 0 }, 
-  iconMargin: { marginBottom: 4 }, 
-  navText: { fontSize: 12, color: '#888', fontWeight: '500' },
+  iconMargin: { marginBottom: 4 },
+  navText: { fontSize: 12, fontWeight: '500' },
   navTextActive: { fontSize: 12, color: '#ffffff', fontWeight: 'bold' }
 });

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
+import { useAppTheme } from '../lib/ThemeContext'; // THEME HOOK
 import {
   DownloadedStudyPack,
   getAllDownloadedPacks,
@@ -15,7 +16,6 @@ import {
   makePackId,
 } from '../lib/offlineStudyPacks';
 
-// ---------- Subject grouping helpers ----------
 const SUBJECT_COLORS = ['#5480e5', '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
 const FALLBACK_ICONS = ['bulb', 'earth', 'library', 'school', 'rocket', 'extension-puzzle'];
 
@@ -40,6 +40,7 @@ const getSubjectIcon = (name: string) => {
 };
 
 export default function LearnScreen() {
+  const { theme } = useAppTheme();
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
   const [selectedToolRoute, setSelectedToolRoute] = useState('');
   const [expandedSubjectId, setExpandedSubjectId] = useState<any | null>(null);
@@ -70,13 +71,11 @@ export default function LearnScreen() {
       if (!user) return;
 
       const response = await fetch(`${API_BASE_URL}/api/ai-recommendation/${user.id}`);
-
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
         setRecommendation(data);
       } else {
-        console.error(`AI recommendation: expected JSON from ${API_BASE_URL} but got HTTP ${response.status}.`);
         setRecommendation(null);
       }
     } catch (error) {
@@ -88,10 +87,7 @@ export default function LearnScreen() {
 
   const fetchDatabaseModules = async () => {
     try {
-      const { data, error } = await supabase
-        .from('ai_lessons')
-        .select('id, title, parsed_content');
-
+      const { data, error } = await supabase.from('ai_lessons').select('id, title, parsed_content');
       if (error) throw error;
 
       if (data) {
@@ -142,10 +138,7 @@ export default function LearnScreen() {
     const active = await getActiveStudyPack();
     setActivePackId(active?.id || null);
 
-    const { data } = await supabase
-      .from('ai_lessons')
-      .select('title, parsed_content');
-
+    const { data } = await supabase.from('ai_lessons').select('title, parsed_content');
     if (data) {
       const list: { id: string; subjectTitle: string; moduleTitle: string; lessonData: any }[] = [];
       data.forEach((row: any) => {
@@ -202,19 +195,19 @@ export default function LearnScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <View style={styles.mainBackground}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.headerBg }]} edges={['top', 'left', 'right']}>
+      <View style={[styles.mainBackground, { backgroundColor: theme.bg }]}>
 
-        <View style={styles.topSection}>
+        <View style={[styles.topSection, { backgroundColor: theme.headerBg }]}>
           <Text style={styles.screenTitle}>Learn</Text>
           <TouchableOpacity
-            style={styles.headerDownloadBtn}
+            style={[styles.headerDownloadBtn, { backgroundColor: theme.isDark ? '#334155' : '#eef3ff' }]}
             onPress={() => {
               loadDownloadableLessons();
               setDownloadModalVisible(true);
             }}
           >
-            <Ionicons name="cloud-download-outline" size={24} color="#2e64e5" />
+            <Ionicons name="cloud-download-outline" size={24} color={theme.isDark ? '#60a5fa' : '#2e64e5'} />
             {Object.keys(downloadedPacks).length > 0 && (
               <View style={styles.badgeDownload}>
                 <Text style={styles.badgeDownloadText}>{Object.keys(downloadedPacks).length}</Text>
@@ -234,7 +227,7 @@ export default function LearnScreen() {
             <Text style={styles.sectionSubtitleWhite}>Targeted review based on your latest assessment</Text>
 
             <TouchableOpacity
-              style={styles.aiCard}
+              style={[styles.aiCard, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}
               activeOpacity={0.8}
               disabled={isLoading || !recommendation}
               onPress={() => {
@@ -245,7 +238,7 @@ export default function LearnScreen() {
             >
               {isLoading ? (
                 <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10 }}>
-                  <ActivityIndicator size="small" color="#2e64e5" />
+                  <ActivityIndicator size="small" color={theme.isDark ? '#60a5fa' : '#2e64e5'} />
                 </View>
               ) : (
                 <>
@@ -254,14 +247,14 @@ export default function LearnScreen() {
                       <Ionicons name="sparkles" size={16} color="#ffc107" style={{ marginRight: 6 }} />
                       <Text style={styles.aiBadgeText}>AI Insight</Text>
                     </View>
-                    <Text style={styles.cardTitle}>
+                    <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
                       {recommendation ? recommendation.target_module : 'Keep Exploring'}
                     </Text>
-                    <Text style={styles.cardSubtitle}>
+                    <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
                       {recommendation ? recommendation.rationale : 'Complete more activities to get personalized AI tips!'}
                     </Text>
                   </View>
-                  <View style={styles.aiButton}>
+                  <View style={[styles.aiButton, theme.isDark && { backgroundColor: '#1d4ed8' }]}>
                     <Text style={styles.aiButtonText}>Review</Text>
                   </View>
                 </>
@@ -272,17 +265,14 @@ export default function LearnScreen() {
           {/* Subjects */}
           <View style={styles.sectionContainer}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Subjects</Text>
-              <TouchableOpacity activeOpacity={0.7} style={styles.seeAllButton}>
-                <Text style={styles.seeAllText}>See All</Text>
-              </TouchableOpacity>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Subjects</Text>
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
               {subjects.map((subject) => (
                 <TouchableOpacity
                   key={subject.id}
-                  style={styles.subjectCardWide}
+                  style={[styles.subjectCardWide, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}
                   activeOpacity={0.8}
                   onPress={() => {
                     router.push({
@@ -294,7 +284,7 @@ export default function LearnScreen() {
                   <View style={[styles.largeIconContainer, { backgroundColor: subject.color + '15' }]}>
                     <Ionicons name={subject.icon as any} size={40} color={subject.color} />
                   </View>
-                  <Text style={styles.subjectCardTitle} numberOfLines={2}>{subject.name}</Text>
+                  <Text style={[styles.subjectCardTitle, { color: theme.textPrimary }]} numberOfLines={2}>{subject.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -302,11 +292,11 @@ export default function LearnScreen() {
 
           {/* Quizzes */}
           <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitlePad}>Quizzes</Text>
-            <Text style={styles.sectionSubtitlePad}>Check in on your pending evaluations</Text>
+            <Text style={[styles.sectionTitlePad, { color: theme.textPrimary }]}>Quizzes</Text>
+            <Text style={[styles.sectionSubtitlePad, { color: theme.textSecondary }]}>Check in on your pending evaluations</Text>
 
             <TouchableOpacity
-              style={styles.actionCard}
+              style={[styles.actionCard, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}
               activeOpacity={0.8}
               onPress={() => {
                 const currentSubject = subjects[0]?.name || 'Cookery & Food Safety';
@@ -322,96 +312,43 @@ export default function LearnScreen() {
               }}
             >
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Module 1 Assessment</Text>
-                <Text style={styles.cardSubtitle}>Cookery & Food Safety • 15 Mins</Text>
+                <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>Module 1 Assessment</Text>
+                <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>Cookery & Food Safety • 15 Mins</Text>
               </View>
-              <View style={styles.startButton}>
+              <View style={[styles.startButton, theme.isDark && { backgroundColor: '#1d4ed8' }]}>
                 <Text style={styles.startButtonText}>Start</Text>
               </View>
-              <Ionicons name="chevron-forward" size={24} color="#bbbbbb" style={{ marginLeft: 10 }} />
+              <Ionicons name="chevron-forward" size={24} color={theme.textSecondary} style={{ marginLeft: 10 }} />
             </TouchableOpacity>
           </View>
 
           {/* Study Tools & Library */}
           <View style={styles.sectionContainer}>
-            <Text style={[styles.sectionTitlePad, { marginBottom: 15 }]}>My Library & Tools</Text>
+            <Text style={[styles.sectionTitlePad, { color: theme.textPrimary, marginBottom: 15 }]}>My Library & Tools</Text>
 
             <View style={styles.toolsGrid}>
-              <TouchableOpacity
-                style={styles.toolCard}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setSelectedToolRoute('/flashcards');
-                  setShowSubjectPicker(true);
-                }}
-              >
-                <Ionicons name="albums-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
-                <Text style={styles.toolText}>Flashcards</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.toolCard}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setSelectedToolRoute('/practice');
-                  setShowSubjectPicker(true);
-                }}
-              >
-                <Ionicons name="barbell-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
-                <Text style={styles.toolText}>Practice</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.toolCard} activeOpacity={0.8}>
-                <Ionicons name="star-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
-                <Text style={styles.toolText}>Saved</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.toolCard}
-                activeOpacity={0.8}
-                onPress={() => {
-                  loadDownloadableLessons();
-                  setDownloadModalVisible(true);
-                }}
-              >
-                <Ionicons name="download-outline" size={24} color="#2e64e5" style={styles.toolIcon} />
-                <Text style={styles.toolText}>Downloads</Text>
-                {Object.keys(downloadedPacks).length > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{Object.keys(downloadedPacks).length}</Text>
+              {[
+                { title: 'Flashcards', icon: 'albums-outline', route: '/flashcards' },
+                { title: 'Practice', icon: 'barbell-outline', route: '/practice' },
+                { title: 'Online Resources', icon: 'link-outline', route: 'resources' },
+              ].map((tool, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={[styles.toolCard, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    setSelectedToolRoute(tool.route);
+                    setShowSubjectPicker(true);
+                  }}
+                >
+                  <View style={[styles.toolIconWrapper, theme.isDark && { backgroundColor: '#334155' }]}>
+                    <Ionicons name={tool.icon as any} size={24} color={theme.isDark ? '#60a5fa' : '#2e64e5'} />
                   </View>
-                )}
-              </TouchableOpacity>
+                  <Text style={[styles.toolText, { color: theme.textPrimary }]}>{tool.title}</Text>
+                  <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                </TouchableOpacity>
+              ))}
             </View>
-          </View>
-
-          {/* Quick References */}
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitlePad}>Quick References</Text>
-            <Text style={styles.sectionSubtitlePad}>Hands-on guides for practical application</Text>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-              <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
-                <View style={styles.referenceIconWrapper}>
-                  <Ionicons name="thermometer-outline" size={24} color="#e65100" />
-                </View>
-                <Text style={styles.referenceText}>Safe Cooking Temps</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
-                <View style={styles.referenceIconWrapper}>
-                  <Ionicons name="scale-outline" size={24} color="#3B82F6" />
-                </View>
-                <Text style={styles.referenceText}>Measurement Conversions</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.referenceCard} activeOpacity={0.8}>
-                <View style={styles.referenceIconWrapper}>
-                  <Ionicons name="cut-outline" size={24} color="#10B981" />
-                </View>
-                <Text style={styles.referenceText}>Knife Cuts Guide</Text>
-              </TouchableOpacity>
-            </ScrollView>
           </View>
 
         </ScrollView>
@@ -420,29 +357,29 @@ export default function LearnScreen() {
       {/* Dynamic Subject & Module Selector Modal */}
       <Modal visible={showSubjectPicker} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select a Module</Text>
-            <Text style={styles.modalSubtitle}>Expand a subject to choose your specific review material.</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBg }]}>
+            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Select a Module</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Expand a subject to choose your specific review material.</Text>
 
             <ScrollView style={{ maxHeight: 350 }}>
               {subjects.map((subject) => (
                 <View key={subject.id}>
                   <TouchableOpacity
-                    style={styles.subjectOption}
+                    style={[styles.subjectOption, { borderBottomColor: theme.divider }]}
                     onPress={() => setExpandedSubjectId(expandedSubjectId === subject.id ? null : subject.id)}
                   >
-                    <Text style={[styles.subjectOptionText, expandedSubjectId === subject.id && { color: subject.color }]}>
+                    <Text style={[styles.subjectOptionText, { color: theme.isDark ? '#60a5fa' : '#2e64e5' }, expandedSubjectId === subject.id && { color: subject.color }]}>
                       {subject.name}
                     </Text>
                     <Ionicons
                       name={expandedSubjectId === subject.id ? "chevron-down" : "chevron-forward"}
                       size={20}
-                      color={expandedSubjectId === subject.id ? subject.color : "#aaa"}
+                      color={expandedSubjectId === subject.id ? subject.color : theme.textSecondary}
                     />
                   </TouchableOpacity>
 
                   {expandedSubjectId === subject.id && (
-                    <View style={styles.modulesContainer}>
+                    <View style={[styles.modulesContainer, { backgroundColor: theme.isDark ? '#0f172a' : '#f9fafb', borderBottomColor: theme.divider }]}>
                       {subject.modules.map((moduleName: string, index: number) => (
                         <TouchableOpacity
                           key={index}
@@ -450,14 +387,22 @@ export default function LearnScreen() {
                           onPress={() => {
                             setShowSubjectPicker(false);
                             setExpandedSubjectId(null);
-                            router.push({
-                              pathname: selectedToolRoute,
-                              params: { subject: subject.name, module: moduleName }
-                            } as any);
+
+                            if (selectedToolRoute === 'resources') {
+                              Alert.alert(
+                                "Online Resources",
+                                "No external links have been extracted for this module yet. This feature will be available once the backend extraction is updated."
+                              );
+                            } else {
+                              router.push({
+                                pathname: selectedToolRoute,
+                                params: { subject: subject.name, module: moduleName }
+                              } as any);
+                            }
                           }}
                         >
-                          <Ionicons name="document-text-outline" size={16} color="#666" style={{ marginRight: 8 }} />
-                          <Text style={styles.moduleOptionText}>{moduleName}</Text>
+                          <Ionicons name="document-text-outline" size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+                          <Text style={[styles.moduleOptionText, { color: theme.textPrimary }]}>{moduleName}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -467,13 +412,13 @@ export default function LearnScreen() {
             </ScrollView>
 
             <TouchableOpacity
-              style={styles.cancelButton}
+              style={[styles.cancelButton, theme.isDark && { backgroundColor: '#334155' }]}
               onPress={() => {
                 setShowSubjectPicker(false);
                 setExpandedSubjectId(null);
               }}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={[styles.cancelButtonText, theme.isDark && { color: '#f8fafc' }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -487,16 +432,16 @@ export default function LearnScreen() {
         onRequestClose={() => setDownloadModalVisible(false)}
       >
         <View style={styles.modalOverlayDown}>
-          <View style={styles.modalCardDown}>
+          <View style={[styles.modalCardDown, { backgroundColor: theme.cardBg }]}>
             <View style={styles.modalHeaderDown}>
               <View>
-                <Text style={styles.modalTitleDown}>Download Lessons</Text>
-                <Text style={styles.modalSubtitleDown}>
+                <Text style={[styles.modalTitleDown, { color: theme.textPrimary }]}>Download Lessons</Text>
+                <Text style={[styles.modalSubtitleDown, { color: theme.textSecondary }]}>
                   Includes 10 Flashcards + 20 Practice Quiz items
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setDownloadModalVisible(false)}>
-                <Ionicons name="close" size={26} color="#333" />
+                <Ionicons name="close" size={26} color={theme.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -509,10 +454,10 @@ export default function LearnScreen() {
                 const isDownloading = downloadingId === item.id;
 
                 return (
-                  <View style={[styles.lessonRowDown, isActive && styles.lessonRowActiveDown]}>
+                  <View style={[styles.lessonRowDown, { backgroundColor: theme.isDark ? '#0f172a' : '#fcfaf8', borderColor: theme.borderColor }, isActive && styles.lessonRowActiveDown]}>
                     <View style={{ flex: 1, paddingRight: 10 }}>
                       <Text style={styles.subjectLabelDown}>{item.subjectTitle}</Text>
-                      <Text style={styles.moduleLabelDown}>{item.moduleTitle}</Text>
+                      <Text style={[styles.moduleLabelDown, { color: theme.textPrimary }]}>{item.moduleTitle}</Text>
                       {isDownloaded && (
                         <Text style={styles.packMetaDown}>
                           {isActive ? '★ Connected to Flashcards & Practice' : 'Saved offline (10 cards • 20 quiz items)'}
@@ -521,12 +466,12 @@ export default function LearnScreen() {
                     </View>
 
                     {isDownloading ? (
-                      <ActivityIndicator size="small" color="#2e64e5" />
+                      <ActivityIndicator size="small" color={theme.isDark ? '#60a5fa' : '#2e64e5'} />
                     ) : isDownloaded ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         {!isActive && (
                           <TouchableOpacity
-                            style={styles.useBtnDown}
+                            style={[styles.useBtnDown, theme.isDark && { backgroundColor: '#1d4ed8' }]}
                             onPress={() => handleSelectActivePack(item.id)}
                           >
                             <Text style={styles.useBtnTextDown}>Connect</Text>
@@ -541,7 +486,7 @@ export default function LearnScreen() {
                       </View>
                     ) : (
                       <TouchableOpacity
-                        style={styles.downloadBtnDown}
+                        style={[styles.downloadBtnDown, theme.isDark && { backgroundColor: '#1d4ed8' }]}
                         onPress={() => handleDownloadLesson(item)}
                       >
                         <Ionicons name="download-outline" size={18} color="#fff" />
@@ -561,78 +506,69 @@ export default function LearnScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#2e64e5' },
-  mainBackground: { flex: 1, backgroundColor: '#fcfaf8' },
+  safeArea: { flex: 1 },
+  mainBackground: { flex: 1 },
 
-  topSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#2e64e5', paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, paddingTop: 10, zIndex: 1 },
+  topSection: { paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, paddingHorizontal: 20, paddingTop: 10, zIndex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   screenTitle: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' },
   scrollContent: { paddingBottom: 100, paddingTop: 10 },
   sectionContainer: { marginBottom: 35 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, marginBottom: 15 },
-  sectionTitlePad: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20 },
-  sectionSubtitlePad: { fontSize: 13, color: '#888', paddingHorizontal: 20, marginTop: 4, marginBottom: 15 },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', paddingHorizontal: 20, marginBottom: 15 },
+  sectionTitlePad: { fontSize: 20, fontWeight: 'bold', paddingHorizontal: 20 },
+  sectionSubtitlePad: { fontSize: 13, paddingHorizontal: 20, marginTop: 4, marginBottom: 15 },
   sectionSubtitleWhite: { fontSize: 13, color: '#e0e8f9', paddingHorizontal: 20, marginBottom: 10, marginTop: -35, zIndex: 10 },
 
-  seeAllButton: { paddingRight: 20, marginBottom: 15 },
-  seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
   horizontalScroll: { gap: 15, paddingHorizontal: 20 },
 
   aiCardContainer: { marginBottom: 30 },
-  aiCard: { marginHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#d0ddff', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20, marginTop: 20 },
+  aiCard: { marginHorizontal: 20, borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20, marginTop: 20 },
   aiHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   aiBadgeText: { fontSize: 12, fontWeight: 'bold', color: '#ffc107', textTransform: 'uppercase' },
   aiButton: { backgroundColor: '#2e64e5', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10 },
   aiButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
 
-  subjectCardWide: { width: 140, backgroundColor: '#ffffff', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#e0d8d0', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  subjectCardWide: { width: 140, borderRadius: 16, padding: 12, borderWidth: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
   largeIconContainer: { width: '100%', height: 90, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  subjectCardTitle: { fontSize: 14, fontWeight: 'bold', color: '#333', lineHeight: 20, textAlign: 'center' },
+  subjectCardTitle: { fontSize: 14, fontWeight: 'bold', lineHeight: 20, textAlign: 'center' },
 
-  toolsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20 },
-  toolCard: { width: '48%', backgroundColor: '#ffffff', borderRadius: 16, paddingVertical: 18, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e0d8d0', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
-  toolIcon: { marginRight: 8 },
-  toolText: { fontSize: 14, fontWeight: '600', color: '#333' },
-  badge: { position: 'absolute', top: -6, right: -6, backgroundColor: '#e65100', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#ffffff' },
-  badgeText: { color: '#ffffff', fontSize: 10, fontWeight: 'bold' },
+  toolsGrid: { flexDirection: 'column', gap: 12, paddingHorizontal: 20 },
+  toolCard: { width: '100%', borderRadius: 16, paddingVertical: 15, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', borderWidth: 1, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
+  toolIconWrapper: { backgroundColor: '#f0f4ff', padding: 10, borderRadius: 10, marginRight: 15 },
+  toolText: { fontSize: 16, fontWeight: '600', flex: 1 },
 
-  referenceCard: { backgroundColor: '#ffffff', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', width: 220, borderWidth: 1, borderColor: '#e0d8d0', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
-  referenceIconWrapper: { backgroundColor: '#f5f7fa', padding: 8, borderRadius: 8, marginRight: 12 },
-  referenceText: { fontSize: 14, fontWeight: '600', color: '#333', flex: 1, flexWrap: 'wrap' },
-
-  actionCard: { marginHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#e0d8d0', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 4 },
-  cardSubtitle: { fontSize: 13, color: '#888' },
+  actionCard: { marginHorizontal: 20, borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
+  cardSubtitle: { fontSize: 13 },
   startButton: { backgroundColor: '#2e64e5', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 10 },
   startButtonText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#ffffff', width: '100%', borderRadius: 24, padding: 25, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 15 },
-  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 5 },
-  modalSubtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
-  subjectOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  subjectOptionText: { fontSize: 16, fontWeight: '600', color: '#2e64e5' },
+  modalContent: { width: '100%', borderRadius: 24, padding: 25, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 15 },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 5 },
+  modalSubtitle: { fontSize: 14, marginBottom: 20 },
+  subjectOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1 },
+  subjectOptionText: { fontSize: 16, fontWeight: '600' },
   cancelButton: { marginTop: 20, alignItems: 'center', paddingVertical: 15, backgroundColor: '#f5f5f5', borderRadius: 12 },
   cancelButtonText: { fontSize: 16, fontWeight: 'bold', color: '#f44336' },
 
-  modulesContainer: { backgroundColor: '#f9fafb', paddingVertical: 5, paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  modulesContainer: { paddingVertical: 5, paddingHorizontal: 15, borderBottomWidth: 1 },
   moduleOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
-  moduleOptionText: { fontSize: 14, color: '#444', fontWeight: '500' },
+  moduleOptionText: { fontSize: 14, fontWeight: '500' },
 
-  // --- Download Modal & Button Styles ---
-  headerDownloadBtn: { padding: 8, borderRadius: 12, backgroundColor: '#eef3ff', position: 'relative' },
+  headerDownloadBtn: { padding: 8, borderRadius: 12, position: 'relative' },
   badgeDownload: { position: 'absolute', top: -4, right: -4, backgroundColor: '#e65100', borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1, borderColor: '#fff' },
   badgeDownloadText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
 
   modalOverlayDown: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalCardDown: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
+  modalCardDown: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
   modalHeaderDown: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitleDown: { fontSize: 18, fontWeight: 'bold', color: '#382314' },
-  modalSubtitleDown: { fontSize: 12, color: '#666', marginTop: 2 },
-  lessonRowDown: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#e6e0d8', marginBottom: 10, backgroundColor: '#fcfaf8' },
+  modalTitleDown: { fontSize: 18, fontWeight: 'bold' },
+  modalSubtitleDown: { fontSize: 12, marginTop: 2 },
+  lessonRowDown: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 10 },
   lessonRowActiveDown: { borderColor: '#2e64e5', backgroundColor: '#f2f6ff' },
   subjectLabelDown: { fontSize: 11, fontWeight: 'bold', color: '#2e64e5', textTransform: 'uppercase' },
-  moduleLabelDown: { fontSize: 15, fontWeight: 'bold', color: '#382314', marginTop: 2 },
+  moduleLabelDown: { fontSize: 15, fontWeight: 'bold', marginTop: 2 },
   packMetaDown: { fontSize: 12, color: '#2e7d32', marginTop: 4, fontWeight: '600' },
   downloadBtnDown: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#2e64e5', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
   downloadBtnTextDown: { color: '#fff', fontSize: 13, fontWeight: 'bold' },

@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
 import { Ionicons } from '@expo/vector-icons';
 import { usePreventScreenCapture } from 'expo-screen-capture';
+import { useAppTheme } from '../lib/ThemeContext';
 
 type QuizQuestion = {
   question: string;
@@ -24,6 +25,7 @@ const isValidQuestion = (q: any): q is QuizQuestion =>
 
 export default function QuizScreen() {
   usePreventScreenCapture();
+  const { theme } = useAppTheme();
 
   const { subject } = useLocalSearchParams<{ subject: string }>();
   const moduleTitle = subject || 'Cookery & Food Safety';
@@ -40,7 +42,6 @@ export default function QuizScreen() {
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [score, setScore] = useState(0);
 
-  // Safe navigation helper that clears history stack and lands cleanly on home
   const navigateHome = () => {
     if (router.canDismiss()) {
       router.dismissAll();
@@ -48,7 +49,6 @@ export default function QuizScreen() {
     router.replace('/home' as any);
   };
 
-  // Intercept Android hardware back button so users cannot loop back into a completed/abandoned quiz
   useEffect(() => {
     const backAction = () => {
       if (quizComplete) {
@@ -99,8 +99,6 @@ export default function QuizScreen() {
 
       const contentType = response.headers.get('content-type') ?? '';
       if (!response.ok || !contentType.includes('application/json')) {
-        const preview = (await response.text()).slice(0, 120);
-        console.error(`Quiz backend replied ${response.status} (${contentType}): ${preview}`);
         throw new Error('BACKEND_UNAVAILABLE');
       }
 
@@ -185,26 +183,25 @@ export default function QuizScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
         <ActivityIndicator size="large" color="#2e64e5" />
-        <Text style={styles.loadingText}>Gemini is generating your unique assessment...</Text>
+        <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Gemini is generating your unique assessment...</Text>
         <Text style={styles.loadingSubtext}>Screen capture is disabled.</Text>
       </View>
     );
   }
 
-  // RESULT SCREEN
   if (quizComplete) {
     const passed = score >= (questions.length / 2);
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.successContainer}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+        <View style={[styles.successContainer, { backgroundColor: theme.bg }]}>
           <Ionicons name={passed ? "checkmark-circle" : "alert-circle"} size={80} color={passed ? "#4caf50" : "#f44336"} />
-          <Text style={styles.successTitle}>Assessment Complete</Text>
-          <Text style={styles.successMessage}>Your permanent grade has been recorded in the ALS system.</Text>
+          <Text style={[styles.successTitle, { color: theme.textPrimary }]}>Assessment Complete</Text>
+          <Text style={[styles.successMessage, { color: theme.textSecondary }]}>Your permanent grade has been recorded in the ALS system.</Text>
 
-          <View style={styles.rewardBox}>
-            <Text style={styles.rewardLabel}>Final Score</Text>
+          <View style={[styles.rewardBox, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
+            <Text style={[styles.rewardLabel, { color: theme.textSecondary }]}>Final Score</Text>
             <Text style={[styles.rewardValue, { color: passed ? "#4caf50" : "#f44336" }]}>
               {score} / {questions.length}
             </Text>
@@ -218,15 +215,14 @@ export default function QuizScreen() {
     );
   }
 
-  // ERROR / EMPTY SCREEN
   const currentQ = questions[currentIndex];
   if (errorMessage || !currentQ) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="cloud-offline-outline" size={64} color="#aaa" />
-          <Text style={styles.errorTitle}>Assessment unavailable</Text>
-          <Text style={styles.errorText}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+        <View style={[styles.errorContainer, { backgroundColor: theme.bg }]}>
+          <Ionicons name="cloud-offline-outline" size={64} color={theme.textSecondary} />
+          <Text style={[styles.errorTitle, { color: theme.textPrimary }]}>Assessment unavailable</Text>
+          <Text style={[styles.errorText, { color: theme.textSecondary }]}>
             {errorMessage ?? "We couldn't load your assessment. Please try again."}
           </Text>
 
@@ -247,7 +243,7 @@ export default function QuizScreen() {
   const progressPercent = ((currentIndex + 1) / questions.length) * 100;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right', 'bottom']}>
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
@@ -256,16 +252,16 @@ export default function QuizScreen() {
             { text: "Leave", style: "destructive", onPress: navigateHome }
           ]);
         }} style={styles.closeButton}>
-          <Ionicons name="close" size={28} color="#aaa" />
+          <Ionicons name="close" size={28} color={theme.textSecondary} />
         </TouchableOpacity>
-        <View style={styles.progressBarBg}>
+        <View style={[styles.progressBarBg, theme.isDark && { backgroundColor: '#334155' }]}>
           <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
         </View>
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.questionCounter}>QUESTION {currentIndex + 1} OF {questions.length}</Text>
-        <Text style={styles.questionPrompt}>{currentQ.question}</Text>
+        <Text style={[styles.questionCounter, { color: theme.textSecondary }]}>QUESTION {currentIndex + 1} OF {questions.length}</Text>
+        <Text style={[styles.questionPrompt, { color: theme.textPrimary }]}>{currentQ.question}</Text>
 
         <View style={styles.optionsContainer}>
           {currentQ.options.map((opt: string, idx: number) => (
@@ -273,14 +269,16 @@ export default function QuizScreen() {
               key={idx}
               style={[
                 styles.optionButton,
-                selectedAnswer === opt && styles.optionSelected
+                { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
+                selectedAnswer === opt && [styles.optionSelected, theme.isDark && { backgroundColor: '#1e3a8a' }]
               ]}
               onPress={() => setSelectedAnswer(opt)}
               activeOpacity={0.7}
             >
               <Text style={[
                 styles.optionText,
-                selectedAnswer === opt && styles.optionTextSelected
+                { color: theme.textPrimary },
+                selectedAnswer === opt && [styles.optionTextSelected, theme.isDark && { color: '#60a5fa' }]
               ]}>
                 {opt}
               </Text>
@@ -289,7 +287,7 @@ export default function QuizScreen() {
         </View>
       </View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: theme.cardBg, borderTopColor: theme.borderColor }]}>
         <TouchableOpacity
           style={[styles.submitButton, !selectedAnswer && styles.submitButtonDisabled]}
           onPress={handleNext}
@@ -309,42 +307,36 @@ export default function QuizScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fcfaf8' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8', padding: 20 },
-  loadingText: { marginTop: 20, fontSize: 16, color: '#333', fontWeight: 'bold', textAlign: 'center' },
+  safeArea: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  loadingText: { marginTop: 20, fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
   loadingSubtext: { marginTop: 8, fontSize: 13, color: '#f44336', fontWeight: '600' },
-
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#fcfaf8' },
-  errorTitle: { fontSize: 24, fontWeight: '900', color: '#333', marginTop: 20, marginBottom: 10 },
-  errorText: { fontSize: 16, color: '#666', textAlign: 'center', lineHeight: 24, marginBottom: 30 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  errorTitle: { fontSize: 24, fontWeight: '900', marginTop: 20, marginBottom: 10 },
+  errorText: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 30 },
   backLink: { marginTop: 18, paddingVertical: 10, paddingHorizontal: 20 },
   backLinkText: { fontSize: 16, fontWeight: 'bold', color: '#2e64e5' },
-
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
   closeButton: { paddingRight: 15 },
   progressBarBg: { flex: 1, height: 12, backgroundColor: '#e0e8f9', borderRadius: 6, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: '#2e64e5', borderRadius: 6 },
-
   content: { flex: 1, paddingHorizontal: 20, paddingTop: 10 },
-  questionCounter: { fontSize: 13, fontWeight: 'bold', color: '#aaa', letterSpacing: 1, marginBottom: 10 },
-  questionPrompt: { fontSize: 22, fontWeight: 'bold', color: '#333', lineHeight: 30, marginBottom: 30 },
-
+  questionCounter: { fontSize: 13, fontWeight: 'bold', letterSpacing: 1, marginBottom: 10 },
+  questionPrompt: { fontSize: 22, fontWeight: 'bold', lineHeight: 30, marginBottom: 30 },
   optionsContainer: { gap: 12 },
-  optionButton: { padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#e0e8f9', backgroundColor: '#ffffff' },
+  optionButton: { padding: 18, borderRadius: 16, borderWidth: 2 },
   optionSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
-  optionText: { fontSize: 16, fontWeight: '600', color: '#333' },
+  optionText: { fontSize: 16, fontWeight: '600' },
   optionTextSelected: { color: '#2e64e5' },
-
-  footer: { padding: 20, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#f0f4ff' },
+  footer: { padding: 20, borderTopWidth: 1 },
   submitButton: { backgroundColor: '#2e64e5', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
   submitButtonDisabled: { backgroundColor: '#a5c0ff' },
   submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
-
-  successContainer: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#fcfaf8' },
-  successTitle: { fontSize: 28, fontWeight: '900', color: '#333', marginTop: 28, marginBottom: 10 },
-  successMessage: { fontSize: 16, color: '#666', textAlign: 'center', lineHeight: 24, marginBottom: 40 },
-  rewardBox: { backgroundColor: '#ffffff', paddingVertical: 20, paddingHorizontal: 40, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: '#d0ddff', marginBottom: 40, width: '100%' },
-  rewardLabel: { fontSize: 14, color: '#aaa', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 },
+  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  successTitle: { fontSize: 28, fontWeight: '900', marginTop: 28, marginBottom: 10 },
+  successMessage: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 40 },
+  rewardBox: { paddingVertical: 20, paddingHorizontal: 40, borderRadius: 20, alignItems: 'center', borderWidth: 1, marginBottom: 40, width: '100%' },
+  rewardLabel: { fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 },
   rewardValue: { fontSize: 36, fontWeight: '900' },
   returnButton: { backgroundColor: '#2e64e5', paddingVertical: 18, paddingHorizontal: 40, borderRadius: 16, width: '100%', alignItems: 'center' },
   returnButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },

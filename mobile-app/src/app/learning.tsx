@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
-// 🟢 1. Import SafeAreaView from the safer context library instead of react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { useAppTheme } from '../lib/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -29,6 +29,7 @@ interface AIModule {
 }
 
 export default function LearningScreen() {
+  const { theme } = useAppTheme();
   const router = useRouter();
   const { lessonData } = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState<'overview' | 'full'>('overview');
@@ -77,7 +78,7 @@ export default function LearningScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.container, { backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#2563EB" />
       </View>
     );
@@ -85,19 +86,18 @@ export default function LearningScreen() {
 
   if (!moduleData || !currentLesson) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text>No lesson content found. Please upload a module.</Text>
+      <View style={[styles.container, { backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: theme.textPrimary }}>No lesson content found. Please upload a module.</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* 🟢 2. Use edges={['top']} to force Android to render the blue header BELOW the status bar */}
-      <SafeAreaView style={styles.header} edges={['top']}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <SafeAreaView style={[styles.header, { backgroundColor: theme.headerBg }]} edges={['top']}>
         <View style={styles.headerTop}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={[styles.backButton, { backgroundColor: theme.cardBg }]}
             onPress={() => router.back()}
             activeOpacity={0.8}
             hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
@@ -128,13 +128,18 @@ export default function LearningScreen() {
 
         <View style={styles.toggleRow}>
           <TouchableOpacity
-            style={[styles.toggleBtn, activeTab === 'overview' ? styles.toggleBtnActive : styles.toggleBtnInactive]}
+            style={[
+              styles.toggleBtn,
+              activeTab === 'overview'
+                ? styles.toggleBtnActive
+                : [styles.toggleBtnInactive, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]
+            ]}
             onPress={() => setActiveTab('overview')}
             activeOpacity={0.8}
           >
-            <Ionicons name="information-circle-outline" size={20} color={activeTab === 'overview' ? '#FFF' : '#6B7280'} />
+            <Ionicons name="information-circle-outline" size={20} color={activeTab === 'overview' ? '#FFF' : theme.textSecondary} />
             <Text
-              style={[styles.toggleText, activeTab === 'overview' ? styles.toggleTextActive : styles.toggleTextInactive]}
+              style={[styles.toggleText, activeTab === 'overview' ? styles.toggleTextActive : { color: theme.textSecondary }]}
               numberOfLines={1}
               adjustsFontSizeToFit
             >
@@ -143,12 +148,17 @@ export default function LearningScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.toggleBtn, activeTab === 'full' ? styles.toggleBtnActive : styles.toggleBtnInactive]}
+            style={[
+              styles.toggleBtn,
+              activeTab === 'full'
+                ? styles.toggleBtnActive
+                : [styles.toggleBtnInactive, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]
+            ]}
             onPress={() => setActiveTab('full')}
             activeOpacity={0.8}
           >
-            <Ionicons name="book-outline" size={20} color={activeTab === 'full' ? '#FFF' : '#6B7280'} />
-            <Text style={[styles.toggleText, activeTab === 'full' ? styles.toggleTextActive : styles.toggleTextInactive]}>
+            <Ionicons name="book-outline" size={20} color={activeTab === 'full' ? '#FFF' : theme.textSecondary} />
+            <Text style={[styles.toggleText, activeTab === 'full' ? styles.toggleTextActive : { color: theme.textSecondary }]}>
               Read Full Module
             </Text>
           </TouchableOpacity>
@@ -157,60 +167,59 @@ export default function LearningScreen() {
         {activeTab === 'overview' ? (
           <View>
             <View style={styles.badgesRow}>
-              <View style={styles.aiBadge}>
-                <Text style={styles.aiBadgeText}>AI Overview</Text>
+              <View style={[styles.aiBadge, theme.isDark && { backgroundColor: '#334155' }]}>
+                <Text style={[styles.aiBadgeText, theme.isDark && { color: '#f8fafc' }]}>AI Overview</Text>
               </View>
-              <View style={styles.xpBadge}>
-                <Ionicons name="star-outline" size={14} color="#3B82F6" />
-                <Text style={styles.xpBadgeText}> +5 XP</Text>
+              <View style={[styles.xpBadge, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
+                <Ionicons name="star-outline" size={14} color={theme.isDark ? '#60a5fa' : '#3B82F6'} />
+                <Text style={[styles.xpBadgeText, theme.isDark && { color: '#60a5fa' }]}> +5 XP</Text>
               </View>
             </View>
 
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
               <View style={styles.cardHeader}>
-                <View style={styles.iconCircleBlue}>
+                <View style={[styles.iconCircleBlue, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
                   <Ionicons name="information" size={18} color="#3B82F6" />
                 </View>
-                <Text style={styles.cardTitle}>{currentLesson.overview_title}</Text>
+                <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{currentLesson.overview_title}</Text>
               </View>
-              <Text style={styles.bodyText}>
+              <Text style={[styles.bodyText, { color: theme.textSecondary }]}>
                 {currentLesson.overview_body}
               </Text>
             </View>
 
-            <Text style={styles.sectionTitle}>Key Concepts</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Key Concepts</Text>
 
             {currentLesson.key_concepts?.map((concept, index) => {
               const iconStyle = getConceptIcon(index);
               return (
-                <View key={index} style={styles.card}>
+                <View key={index} style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
                   <View style={styles.conceptHeader}>
                     <Ionicons name={iconStyle.name as any} size={24} color={iconStyle.color} style={styles.conceptIcon} />
-                    <Text style={styles.cardTitle}>{concept.concept_title}</Text>
+                    <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{concept.concept_title}</Text>
                   </View>
-                  <Text style={styles.bodyText}>
+                  <Text style={[styles.bodyText, { color: theme.textSecondary }]}>
                     {concept.concept_body}
                   </Text>
                 </View>
               );
             })}
 
-            <View style={styles.disclaimerBox}>
-              <Ionicons name="star-outline" size={20} color="#3B82F6" style={{ marginTop: 2, marginRight: 10 }} />
-              <Text style={styles.disclaimerText}>
+            <View style={[styles.disclaimerBox, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
+              <Ionicons name="star-outline" size={20} color={theme.isDark ? '#93c5fd' : '#3B82F6'} style={{ marginTop: 2, marginRight: 10 }} />
+              <Text style={[styles.disclaimerText, theme.isDark && { color: '#dbeafe' }]}>
                 This AI summary covers the most important points. Switch to Read Full Module for detailed content and references.
               </Text>
             </View>
           </View>
         ) : (
           <View style={styles.fullModuleContainer}>
-            <Text style={styles.bodyText}>{currentLesson.full_module_text}</Text>
+            <Text style={[styles.bodyText, { color: theme.textPrimary }]}>{currentLesson.full_module_text}</Text>
           </View>
         )}
       </ScrollView>
 
-      {/* 🟢 3. Pinned Footer for Start Activity Button so it never gets cut off */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: theme.cardBg, borderTopColor: theme.borderColor }]}>
         <TouchableOpacity
           style={styles.primaryButton}
           activeOpacity={0.8}
@@ -230,10 +239,10 @@ export default function LearningScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6' },
-  header: { backgroundColor: '#2563EB', paddingHorizontal: 20, paddingBottom: 15 },
+  container: { flex: 1 },
+  header: { paddingHorizontal: 20, paddingBottom: 15 },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 20 },
-  backButton: { width: 36, height: 36, backgroundColor: '#FFF', borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  backButton: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   headerTextContainer: { flex: 1, paddingHorizontal: 15 },
   subjectText: { color: '#BFDBFE', fontSize: 13, marginBottom: 4 },
   lessonTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
@@ -245,31 +254,28 @@ const styles = StyleSheet.create({
   progressLabelText: { color: '#93C5FD', fontSize: 12 },
   scrollContent: { padding: 20, paddingBottom: 20 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 10 },
-  toggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 8, borderRadius: 8 },
+  toggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1 },
   toggleBtnActive: { backgroundColor: '#2563EB', borderColor: '#2563EB', elevation: 2, shadowColor: '#2563EB', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
-  toggleBtnInactive: { backgroundColor: '#FFF', borderColor: '#E5E7EB' },
+  toggleBtnInactive: {},
   toggleText: { fontSize: 14, fontWeight: '600', marginLeft: 6, flexShrink: 1 },
   toggleTextActive: { color: '#FFF' },
-  toggleTextInactive: { color: '#6B7280' },
   badgesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   aiBadge: { backgroundColor: '#E5E7EB', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   aiBadgeText: { color: '#4B5563', fontSize: 12, fontWeight: '600' },
   xpBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#DBEAFE', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
   xpBadgeText: { color: '#2563EB', fontSize: 12, fontWeight: 'bold' },
-  card: { backgroundColor: '#FFF', borderRadius: 16, padding: 20, marginBottom: 15, borderWidth: 1, borderColor: '#F3F4F6', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
+  card: { borderRadius: 16, padding: 20, marginBottom: 15, borderWidth: 1, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   iconCircleBlue: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
-  bodyText: { fontSize: 14, color: '#4B5563', lineHeight: 22 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginTop: 10, marginBottom: 15, marginLeft: 5 },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', flex: 1 },
+  bodyText: { fontSize: 14, lineHeight: 22 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 10, marginBottom: 15, marginLeft: 5 },
   conceptHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   conceptIcon: { marginRight: 12 },
   disclaimerBox: { flexDirection: 'row', backgroundColor: '#DBEAFE', padding: 16, borderRadius: 12, marginTop: 5, marginBottom: 25 },
   disclaimerText: { flex: 1, color: '#1D4ED8', fontSize: 13, lineHeight: 20 },
   fullModuleContainer: { paddingVertical: 20 },
-
-  // 🟢 Fixed Footer Styles
-  footer: { padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  footer: { padding: 20, borderTopWidth: 1 },
   primaryButton: { backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   primaryButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
 });

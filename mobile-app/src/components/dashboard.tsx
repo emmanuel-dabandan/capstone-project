@@ -1,14 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, Platform } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
-import { FlatList } from 'react-native-gesture-handler';
+import { useAppTheme } from '../lib/ThemeContext'; // THEME HOOK
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.85;
+const CARD_WIDTH = Math.round(width * 0.85);
+const CARD_MARGIN = 8;
+const ITEM_SIZE = CARD_WIDTH + (CARD_MARGIN * 2);
 
 const ProgressCircle = ({ progress }: { progress: number }) => {
   const size = 70;
@@ -36,6 +38,7 @@ const defaultSubjects = [
 ];
 
 export default function DashboardScreen() {
+  const { theme } = useAppTheme();
   const [firstName, setFirstName] = useState('');
   const [strand, setStrand] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -48,11 +51,10 @@ export default function DashboardScreen() {
 
   const infiniteModules = Array(100).fill(learningModules).flat().map((module, index) => ({ ...module, uniqueId: `card-${index}` }));
 
-  // Philippine Time (PHT) Midnight Calculator
   const getSecondsUntilPHTMidnight = () => {
     const now = new Date();
     const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const phtNow = new Date(utcMs + (8 * 3600000)); // PHT is UTC+8
+    const phtNow = new Date(utcMs + (8 * 3600000));
     const phtMidnight = new Date(phtNow);
     phtMidnight.setHours(24, 0, 0, 0);
     return Math.floor((phtMidnight.getTime() - phtNow.getTime()) / 1000);
@@ -60,9 +62,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     setTimeLeft(getSecondsUntilPHTMidnight());
-    const timer = setInterval(() => {
-      setTimeLeft(getSecondsUntilPHTMidnight());
-    }, 1000);
+    const timer = setInterval(() => setTimeLeft(getSecondsUntilPHTMidnight()), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -113,9 +113,7 @@ export default function DashboardScreen() {
               .order('created_at', { ascending: false })
               .limit(3);
 
-            if (notifsData) {
-              setRecentNotifications(notifsData);
-            }
+            if (notifsData) setRecentNotifications(notifsData);
           }
 
           const { data: lessonsData } = await supabase.from('ai_lessons').select('title, subtitle, progress').order('created_at', { ascending: false });
@@ -132,7 +130,6 @@ export default function DashboardScreen() {
           setIsLoading(false);
         }
       };
-
       fetchDashboardData();
     }, [])
   );
@@ -144,16 +141,16 @@ export default function DashboardScreen() {
   };
 
   if (isLoading) {
-    return <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#2e64e5" /></View>;
+    return <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}><ActivityIndicator size="large" color={theme.headerBg} /></View>;
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <View style={styles.mainBackground}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.headerBg }]} edges={['top', 'left', 'right']}>
+      <View style={[styles.mainBackground, { backgroundColor: theme.bg }]}>
 
-        <View style={styles.topSection}>
+        <View style={[styles.topSection, { backgroundColor: theme.headerBg }]}>
           <View style={styles.headerBar}>
-            <View style={styles.statPill}><Text style={styles.statTextXP}>{xp} XP</Text></View>
+            <View style={[styles.statPill, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}><Text style={styles.statTextXP}>{xp} XP</Text></View>
             <View style={[styles.statPill, { borderColor: '#ff9800', backgroundColor: '#fff3e0' }]}><Text style={[styles.statText, { color: '#e65100' }]}>{streak} Day Streak</Text></View>
           </View>
           <View style={styles.welcomeContainer}>
@@ -164,16 +161,15 @@ export default function DashboardScreen() {
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          {/* THE NEW CHALLENGE CARD */}
-          <View style={styles.challengeCard}>
+          <View style={[styles.challengeCard, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
             <View style={styles.challengeHeader}>
               <View>
-                <Text style={styles.challengeTitle}>Daily Challenge</Text>
-                <Text style={styles.challengeSubtitle}>Review 3 past concepts</Text>
+                <Text style={[styles.challengeTitle, { color: theme.textPrimary }]}>Daily Challenge</Text>
+                <Text style={[styles.challengeSubtitle, { color: theme.textSecondary }]}>Review 3 past concepts</Text>
               </View>
-              <View style={styles.challengeTimerBadge}>
-                <Ionicons name="time-outline" size={14} color="#666" />
-                <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+              <View style={[styles.challengeTimerBadge, { backgroundColor: theme.isDark ? '#334155' : '#f0f4ff' }]}>
+                <Ionicons name="time-outline" size={14} color={theme.textSecondary} />
+                <Text style={[styles.timerText, { color: theme.textSecondary }]}>{formatTime(timeLeft)}</Text>
               </View>
             </View>
 
@@ -183,7 +179,7 @@ export default function DashboardScreen() {
                 <Text style={styles.rewardText}>+150 XP</Text>
               </View>
               <TouchableOpacity
-                style={[styles.challengeButton, isChallengeDone && styles.challengeButtonDone]}
+                style={[styles.challengeButton, isChallengeDone && styles.challengeButtonDone, theme.isDark && !isChallengeDone && { backgroundColor: '#1d4ed8' }]}
                 disabled={isChallengeDone}
                 onPress={() => router.push('/gauntlet' as any)}
               >
@@ -193,22 +189,33 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.carouselContainer}>
-            <Text style={styles.sectionTitle}>Your Learning Path</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Your Learning Path</Text>
             <FlatList
-                style={{ transform: [{ translateX: Platform.OS === 'android' ? -15 : 0 }] }}
-                horizontal={true} nestedScrollEnabled={true} showsHorizontalScrollIndicator={false} snapToInterval={CARD_WIDTH + 15} snapToAlignment="center" decelerationRate="fast"
-                contentContainerStyle={styles.carouselContent} data={infiniteModules} keyExtractor={(item) => item.uniqueId} initialScrollIndex={learningModules.length * 50}
-                getItemLayout={(data, index) => ({ length: CARD_WIDTH + 15, offset: (CARD_WIDTH + 15) * index, index })}
-                ListHeaderComponent={Platform.OS === 'android' ? <View style={{ width: (width - CARD_WIDTH) / 2 - 7.5 }} /> : null}
-                ListFooterComponent={Platform.OS === 'android' ? <View style={{ width: (width - CARD_WIDTH) / 2 - 7.5 }} /> : null}
-                renderItem={({ item: module }) => (
-                <View style={[styles.subjectCard, { width: CARD_WIDTH }]}>
+              horizontal={true}
+              nestedScrollEnabled={true}
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={ITEM_SIZE}
+              snapToAlignment="center"
+              decelerationRate="fast"
+              disableIntervalMomentum={true}
+              contentContainerStyle={styles.carouselContent}
+              data={infiniteModules}
+              keyExtractor={(item) => item.uniqueId}
+              initialScrollIndex={learningModules.length * 50}
+              getItemLayout={(_, index) => ({ length: ITEM_SIZE, offset: ITEM_SIZE * index, index })}
+              renderItem={({ item: module }) => (
+                <View style={[styles.subjectCard, { width: CARD_WIDTH, marginHorizontal: CARD_MARGIN, backgroundColor: theme.isDark ? '#1e3a8a' : '#5480e5' }]}>
                   <View style={styles.cardContentRow}>
                     <View style={styles.cardLeft}>
                       <Text style={styles.subjectTitle} numberOfLines={2}>{module.title}</Text>
-                      <Text style={styles.subjectSubtitle} numberOfLines={1}>{module.subtitle}</Text>
-                      <TouchableOpacity style={[styles.cardButton, module.progress === 0 ? styles.startButton : styles.continueButton]} onPress={() => router.push(`/lesson?subject=${encodeURIComponent(module.title)}` as any)}>
-                        <Text style={[styles.cardButtonText, module.progress === 0 ? styles.startButtonText : styles.continueButtonText]}>{module.progress === 0 ? 'Start Task' : 'View Task'}</Text>
+                      <Text style={[styles.subjectSubtitle, { color: theme.isDark ? '#94a3b8' : '#a0b9c1' }]} numberOfLines={1}>{module.subtitle}</Text>
+                      <TouchableOpacity
+                        style={[styles.cardButton, { backgroundColor: theme.isDark ? '#0f172a' : '#fefefe' }]}
+                        onPress={() => router.push(`/lesson?subject=${encodeURIComponent(module.title)}` as any)}
+                      >
+                        <Text style={[styles.cardButtonText, { color: theme.isDark ? '#f8fafc' : '#000000' }]}>
+                          {module.progress === 0 ? 'Start Task' : 'View Task'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                     <View style={styles.cardRight}>
@@ -221,17 +228,17 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Recent Updates</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Recent Updates</Text>
             <TouchableOpacity activeOpacity={0.7} style={styles.seeAllButton} onPress={() => router.push('/notifications' as any)}>
-              <Text style={styles.seeAllText}>See All</Text>
+              <Text style={[styles.seeAllText, { color: theme.isDark ? '#60a5fa' : '#2e64e5' }]}>See All</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.notificationsOuterContainer}>
-            <View style={styles.cardContainer}>
+            <View style={[styles.cardContainer, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
               {recentNotifications.length === 0 ? (
                 <View style={{ padding: 25, alignItems: 'center' }}>
-                  <Text style={{ color: '#aaa', fontSize: 13 }}>No recent updates.</Text>
+                  <Text style={{ color: theme.textSecondary, fontSize: 13 }}>No recent updates.</Text>
                 </View>
               ) : (
                 recentNotifications.map((item, index) => (
@@ -239,6 +246,7 @@ export default function DashboardScreen() {
                     key={item.id}
                     style={[
                       styles.notificationItem,
+                      { borderBottomColor: theme.divider },
                       index === recentNotifications.length - 1 && styles.lastItem
                     ]}
                     activeOpacity={0.6}
@@ -248,17 +256,17 @@ export default function DashboardScreen() {
                     }}
                   >
                     <View style={styles.itemContent}>
-                      <Text style={[styles.messageText, !item.is_read && styles.messageTextUnread]} numberOfLines={2}>
+                      <Text style={[styles.messageText, { color: theme.textPrimary }, !item.is_read && { fontWeight: 'bold' }]} numberOfLines={2}>
                         {item.message}
                       </Text>
 
                       <View style={styles.timeRow}>
                         {!item.is_read && <View style={styles.unreadDot} />}
-                        <Text style={styles.timeText}>{getTimeAgo(item.created_at)}</Text>
+                        <Text style={[styles.timeText, { color: theme.textSecondary }]}>{getTimeAgo(item.created_at)}</Text>
                       </View>
                     </View>
 
-                    <Ionicons name="chevron-forward" size={20} color="#333" />
+                    <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
                   </TouchableOpacity>
                 ))
               )}
@@ -271,32 +279,25 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#2e64e5' },
-  mainBackground: { flex: 1, backgroundColor: '#fcfaf8' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8' },
-  topSection: { backgroundColor: '#2e64e5', paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, zIndex: 1 },
+  safeArea: { flex: 1 },
+  mainBackground: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  topSection: { paddingBottom: 20, borderBottomLeftRadius: 35, borderBottomRightRadius: 35, zIndex: 1 },
   scrollContent: { paddingBottom: 100, paddingTop: 10 },
   headerBar: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 25 },
-  statPill: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#d0ddff' },
+  statPill: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },
   statTextXP: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
   statText: { fontSize: 14, fontWeight: 'bold' },
   welcomeContainer: { paddingHorizontal: 20 },
   greetingText: { fontSize: 18, color: '#e0e8f9' },
   nameText: { fontSize: 32, fontWeight: 'bold', color: '#ffffff' },
 
-  challengeCard: { marginHorizontal: 20, backgroundColor: '#ffffff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#d0ddff', marginBottom: 30, marginTop: 0, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20 },
+  challengeCard: { marginHorizontal: 20, borderRadius: 16, padding: 20, borderWidth: 1, marginBottom: 30, marginTop: 0, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20 },
   challengeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
-  challengeTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  challengeSubtitle: { fontSize: 13, color: '#666', marginTop: 2 },
-  challengeTimerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f4ff',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10
-  },
-  timerText: { fontSize: 12, fontWeight: 'bold', color: '#666', marginLeft: 4 },
+  challengeTitle: { fontSize: 20, fontWeight: 'bold' },
+  challengeSubtitle: { fontSize: 13, marginTop: 2 },
+  challengeTimerBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  timerText: { fontSize: 12, fontWeight: 'bold', marginLeft: 4 },
   challengeFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rewardPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff9c4', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   rewardText: { fontSize: 14, fontWeight: 'bold', color: '#f57f17', marginLeft: 4 },
@@ -305,34 +306,29 @@ const styles = StyleSheet.create({
   challengeButtonText: { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
 
   carouselContainer: { paddingBottom: 20 },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, marginBottom: 15 },
-  carouselContent: { alignItems: 'center', paddingHorizontal: Platform.OS === 'ios' ? undefined : 0 },
-  subjectCard: { marginHorizontal: 7.5, backgroundColor: '#5480e5', borderRadius: 24, padding: 20, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5 },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', paddingHorizontal: 20, marginBottom: 15 },
+  carouselContent: { alignItems: 'center' },
+  subjectCard: { borderRadius: 24, padding: 20, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5 },
   cardContentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardLeft: { width: '65%', justifyContent: 'center', paddingRight: 15 },
   cardRight: { width: '35%', alignItems: 'flex-end', justifyContent: 'center' },
   subjectTitle: { fontSize: 18, fontWeight: 'bold', color: '#ffffff', marginBottom: 6, lineHeight: 24 },
-  subjectSubtitle: { fontSize: 13, color: '#a0b9c1', marginBottom: 20 },
+  subjectSubtitle: { fontSize: 13, marginBottom: 20 },
   cardButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, alignSelf: 'flex-start' },
-  startButton: { backgroundColor: '#fefefe' },
-  continueButton: { backgroundColor: '#fefefe' },
   cardButtonText: { fontSize: 13, fontWeight: 'bold' },
-  startButtonText: { color: '#000000' },
-  continueButtonText: { color: '#050505' },
   circularProgressText: { fontSize: 16, fontWeight: 'bold', color: '#ffffff' },
 
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   seeAllButton: { paddingRight: 20, marginBottom: 15 },
-  seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#2e64e5' },
+  seeAllText: { fontSize: 14, fontWeight: 'bold' },
 
   notificationsOuterContainer: { paddingHorizontal: 20, paddingBottom: 20 },
-  cardContainer: { backgroundColor: '#ffffff', borderRadius: 20, borderWidth: 1, borderColor: '#d0ddff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, overflow: 'hidden' },
-  notificationItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#f0f4ff' },
+  cardContainer: { borderRadius: 20, borderWidth: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, overflow: 'hidden' },
+  notificationItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1 },
   lastItem: { borderBottomWidth: 0 },
   itemContent: { flex: 1, paddingRight: 15 },
-  messageText: { fontSize: 14, color: '#333', lineHeight: 20, fontWeight: '400' },
-  messageTextUnread: { fontWeight: 'bold', color: '#1a1a1a' },
+  messageText: { fontSize: 14, lineHeight: 20, fontWeight: '400' },
   timeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   unreadDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00e676', marginRight: 6 },
-  timeText: { fontSize: 12, color: '#aaa', fontWeight: '500' },
+  timeText: { fontSize: 12, fontWeight: '500' },
 });

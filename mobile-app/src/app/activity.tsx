@@ -4,8 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { useAppTheme } from '../lib/ThemeContext';
 
 export default function ActivityScreen() {
+  const { theme } = useAppTheme();
   const { lessonData, subject, lessonIndex, totalLessons } = useLocalSearchParams();
   const [lesson, setLesson] = useState<any>(null);
   const [activity, setActivity] = useState<any>(null);
@@ -33,18 +35,15 @@ export default function ActivityScreen() {
     }
   }, [lessonData]);
 
-  // Robust answer validator that handles letters (A/B/C/D), numbers, and full text
-  // Ultra-forgiving answer validator
   const isAnswerCorrect = (userAns: string, act: any): boolean => {
     if (!act) return false;
     const rawCorrect = act.correct_answer ?? act.answer ?? act.correctAnswer ?? act.correct;
     if (rawCorrect === undefined || rawCorrect === null) return false;
 
-    // Helper: Preserves math symbols and punctuation while still ignoring "A." prefixes
     const superClean = (str: string) =>
       String(str || '')
-        .replace(/^(option\s+[a-d]|option\s+\d|[a-d][.)\-:]|\d+[.)\-:])\s*/i, '') // Remove "A. "
-        .trim() // Preserves math symbols like μ
+        .replace(/^(option\s+[a-d]|option\s+\d|[a-d][.)\-:]|\d+[.)\-:])\s*/i, '')
+        .trim()
         .toLowerCase();
 
     const cleanUser = superClean(userAns);
@@ -56,10 +55,7 @@ export default function ActivityScreen() {
 
     if (Array.isArray(act.options)) {
       const letters = ['a', 'b', 'c', 'd', 'e'];
-
-      const userIdx = act.options.findIndex(
-        (opt: string) => superClean(opt) === cleanUser
-      );
+      const userIdx = act.options.findIndex((opt: string) => superClean(opt) === cleanUser);
 
       if (userIdx !== -1) {
         const letter = letters[userIdx];
@@ -85,8 +81,8 @@ export default function ActivityScreen() {
 
   if (!activity) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading Activity...</Text>
+      <SafeAreaView style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading Activity...</Text>
       </SafeAreaView>
     );
   }
@@ -114,47 +110,34 @@ export default function ActivityScreen() {
 
       if (user) {
         try {
-          const { data: profile } = await supabase
-            .from('students')
-            .select('xp')
-            .eq('id', user.id)
-            .single();
-
+          const { data: profile } = await supabase.from('students').select('xp').eq('id', user.id).single();
           const newXp = (profile?.xp || 0) + 50;
           await supabase.from('students').update({ xp: newXp }).eq('id', user.id);
-
-          // 🟢 ADD THIS LINE: Log the daily XP for the graph!
           await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 50 });
-
         } catch (err) {
           console.error("XP Update Failed:", err);
         }
 
         try {
           const { data: allModules } = await supabase.from('ai_lessons').select('id, progress, parsed_content, title');
-
           const currentTitle = lesson?.lesson_title || lesson?.title;
-
           const parentMod = allModules?.find((m: any) =>
             m.parsed_content?.lessons?.some((l: any) => (l.lesson_title || l.title) === currentTitle)
           );
 
           if (parentMod) {
-             if (parentMod.title) {
-               setSubjectName(parentMod.title);
-             }
+            if (parentMod.title) setSubjectName(parentMod.title);
+            const lessonsArray = parentMod.parsed_content.lessons;
+            const totalLessonsInModule = lessonsArray.length || 1;
+            const progressIncrement = Math.round(100 / totalLessonsInModule);
+            const newProgress = Math.min(100, (parentMod.progress || 0) + progressIncrement);
 
-             const lessonsArray = parentMod.parsed_content.lessons;
-             const totalLessonsInModule = lessonsArray.length || 1;
-             const progressIncrement = Math.round(100 / totalLessonsInModule);
-             const newProgress = Math.min(100, (parentMod.progress || 0) + progressIncrement);
+            await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', parentMod.id);
 
-             await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', parentMod.id);
-
-             const currentIndex = lessonsArray.findIndex((l: any) => (l.lesson_title || l.title) === currentTitle);
-             if (currentIndex !== -1 && currentIndex + 1 < lessonsArray.length) {
-               setNextLesson(lessonsArray[currentIndex + 1]);
-             }
+            const currentIndex = lessonsArray.findIndex((l: any) => (l.lesson_title || l.title) === currentTitle);
+            if (currentIndex !== -1 && currentIndex + 1 < lessonsArray.length) {
+              setNextLesson(lessonsArray[currentIndex + 1]);
+            }
           }
         } catch (err) {
           console.error("Progress Update Failed:", err);
@@ -179,7 +162,6 @@ export default function ActivityScreen() {
       const total = parseInt(totalLessons as string, 10) || 1;
       const currentSubject = subject as string || 'Unknown';
 
-      // If we have more lessons, go to the next lesson
       if (currentIdx < total - 1) {
         router.push({
           pathname: '/lesson',
@@ -189,12 +171,10 @@ export default function ActivityScreen() {
           }
         });
       } else {
-        // Module complete: Force absolute route back to home
         router.replace('/home');
       }
     } catch (error) {
       console.error("Routing error:", error);
-      // Emergency escape hatch if math fails
       router.replace('/');
     }
   };
@@ -210,7 +190,8 @@ export default function ActivityScreen() {
             key={index}
             style={[
               styles.optionCard,
-              isSelected && styles.optionCardSelected,
+              { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
+              isSelected && [styles.optionCardSelected, theme.isDark && { backgroundColor: '#1e3a8a' }],
               isSubmitted && isThisOptionCorrect && styles.optionCardCorrect,
               isSubmitted && isSelected && !isThisOptionCorrect && styles.optionCardWrong,
             ]}
@@ -220,7 +201,8 @@ export default function ActivityScreen() {
             <Text
               style={[
                 styles.optionText,
-                isSelected && styles.optionTextSelected,
+                { color: theme.textPrimary },
+                isSelected && [styles.optionTextSelected, theme.isDark && { color: '#60a5fa' }],
                 isSubmitted && isThisOptionCorrect && styles.optionTextCorrect,
               ]}
             >
@@ -243,7 +225,8 @@ export default function ActivityScreen() {
             key={option}
             style={[
               styles.optionCard,
-              isSelected && styles.optionCardSelected,
+              { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
+              isSelected && [styles.optionCardSelected, theme.isDark && { backgroundColor: '#1e3a8a' }],
               isSubmitted && isThisOptionCorrect && styles.optionCardCorrect,
               isSubmitted && isSelected && !isThisOptionCorrect && styles.optionCardWrong,
             ]}
@@ -252,7 +235,8 @@ export default function ActivityScreen() {
             <Text
               style={[
                 styles.optionText,
-                isSelected && styles.optionTextSelected,
+                { color: theme.textPrimary },
+                isSelected && [styles.optionTextSelected, theme.isDark && { color: '#60a5fa' }],
                 isSubmitted && isThisOptionCorrect && styles.optionTextCorrect,
               ]}
             >
@@ -269,11 +253,12 @@ export default function ActivityScreen() {
       <TextInput
         style={[
           styles.textInput,
+          { backgroundColor: theme.cardBg, borderColor: theme.borderColor, color: theme.textPrimary },
           isSubmitted && isCorrect && styles.inputCorrect,
           isSubmitted && !isCorrect && styles.inputWrong,
         ]}
         placeholder="Type your answer here..."
-        placeholderTextColor="#999"
+        placeholderTextColor={theme.textSecondary}
         value={userAnswer}
         onChangeText={setUserAnswer}
         editable={!isSubmitted}
@@ -288,8 +273,8 @@ export default function ActivityScreen() {
 
     return (
       <View>
-        <View style={styles.sentenceContainer}>
-          <Text style={styles.sentenceText}>
+        <View style={[styles.sentenceContainer, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
+          <Text style={[styles.sentenceText, { color: theme.textPrimary }]}>
             {sentenceParts[0]}
             <Text style={[styles.blankSpace, userAnswer ? styles.filledBlank : null]}>
               {userAnswer ? ` ${userAnswer} ` : ' _______ '}
@@ -298,16 +283,24 @@ export default function ActivityScreen() {
           </Text>
         </View>
 
-        <Text style={styles.instructionText}>Tap a word below to fill the blank:</Text>
+        <Text style={[styles.instructionText, { color: theme.textSecondary }]}>Tap a word below to fill the blank:</Text>
 
         <View style={styles.wordBank}>
           {activity.options?.map((word: string, index: number) => (
             <TouchableOpacity
               key={index}
-              style={[styles.wordChip, userAnswer === word && styles.wordChipSelected]}
+              style={[
+                styles.wordChip,
+                { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
+                userAnswer === word && styles.wordChipSelected
+              ]}
               onPress={() => !isSubmitted && setUserAnswer(word)}
             >
-              <Text style={[styles.wordChipText, userAnswer === word && styles.wordChipTextSelected]}>
+              <Text style={[
+                styles.wordChipText,
+                theme.isDark && { color: '#60a5fa' },
+                userAnswer === word && styles.wordChipTextSelected
+              ]}>
                 {word}
               </Text>
             </TouchableOpacity>
@@ -319,11 +312,11 @@ export default function ActivityScreen() {
 
   const renderMatching = () => (
     <View style={styles.matchingContainer}>
-      <Text style={styles.instructionText}>Step 1: Tap a Term. Step 2: Tap its Definition.</Text>
+      <Text style={[styles.instructionText, { color: theme.textSecondary }]}>Step 1: Tap a Term. Step 2: Tap its Definition.</Text>
 
       <View style={styles.matchingColumns}>
         <View style={styles.column}>
-          <Text style={styles.columnHeader}>Terms</Text>
+          <Text style={[styles.columnHeader, { color: theme.textPrimary }]}>Terms</Text>
           {activity.matching_pairs?.map((pair: any, index: number) => {
             const isMatched = !!matchedPairs[pair.term];
             const isSelected = selectedTerm === pair.term;
@@ -333,12 +326,17 @@ export default function ActivityScreen() {
                 key={`term-${index}`}
                 style={[
                   styles.matchCard,
-                  isSelected && styles.matchCardSelected,
+                  { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
+                  isSelected && [styles.matchCardSelected, theme.isDark && { backgroundColor: '#1e3a8a' }],
                   isMatched && styles.matchCardMatched,
                 ]}
                 onPress={() => !isSubmitted && !isMatched && setSelectedTerm(pair.term)}
               >
-                <Text style={[styles.matchText, (isSelected || isMatched) && styles.matchTextSelected]}>
+                <Text style={[
+                  styles.matchText,
+                  { color: theme.textPrimary },
+                  (isSelected || isMatched) && styles.matchTextSelected
+                ]}>
                   {pair.term}
                 </Text>
               </TouchableOpacity>
@@ -347,7 +345,7 @@ export default function ActivityScreen() {
         </View>
 
         <View style={styles.column}>
-          <Text style={styles.columnHeader}>Definitions</Text>
+          <Text style={[styles.columnHeader, { color: theme.textPrimary }]}>Definitions</Text>
           {activity.matching_pairs?.map((pair: any, index: number) => {
             const matchedTerm = Object.keys(matchedPairs).find(
               (term) => matchedPairs[term] === pair.definition
@@ -356,7 +354,11 @@ export default function ActivityScreen() {
             return (
               <TouchableOpacity
                 key={`def-${index}`}
-                style={[styles.matchCard, matchedTerm && styles.matchCardMatched]}
+                style={[
+                  styles.matchCard,
+                  { backgroundColor: theme.cardBg, borderColor: theme.borderColor },
+                  matchedTerm && styles.matchCardMatched
+                ]}
                 onPress={() => {
                   if (!isSubmitted && selectedTerm && !matchedTerm) {
                     setMatchedPairs((prev) => ({ ...prev, [selectedTerm]: pair.definition }));
@@ -364,7 +366,11 @@ export default function ActivityScreen() {
                   }
                 }}
               >
-                <Text style={[styles.matchText, matchedTerm && styles.matchTextSelected]}>
+                <Text style={[
+                  styles.matchText,
+                  { color: theme.textPrimary },
+                  matchedTerm && styles.matchTextSelected
+                ]}>
                   {matchedTerm ? `Matched to: ${matchedTerm}` : pair.definition}
                 </Text>
               </TouchableOpacity>
@@ -382,23 +388,23 @@ export default function ActivityScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="close" size={28} color="#333" />
+          <Ionicons name="close" size={28} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Knowledge Check</Text>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Knowledge Check</Text>
         <View style={{ width: 28 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.badgeContainer}>
-          <Text style={styles.badgeText}>
+        <View style={[styles.badgeContainer, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
+          <Text style={[styles.badgeText, theme.isDark && { color: '#60a5fa' }]}>
             {activity.activity_type ? activity.activity_type.replace(/_/g, ' ').toUpperCase() : 'ACTIVITY'}
           </Text>
         </View>
 
-        <Text style={styles.promptText}>
+        <Text style={[styles.promptText, { color: theme.textPrimary }]}>
           {activity.activity_type === 'drag_and_drop'
             ? 'Complete the sentence:'
             : activity.question_prompt}
@@ -433,7 +439,7 @@ export default function ActivityScreen() {
         )}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: theme.cardBg, borderTopColor: theme.borderColor }]}>
         {!isSubmitted ? (
           <TouchableOpacity
             style={[
@@ -461,47 +467,47 @@ export default function ActivityScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fcfaf8' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fcfaf8' },
-  loadingText: { fontSize: 16, color: '#666' },
+  safeArea: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 16 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15 },
   backButton: { padding: 5, marginLeft: -5 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#382314' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold' },
   scrollContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 },
   badgeContainer: { backgroundColor: '#e0e8f9', alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginBottom: 16 },
   badgeText: { color: '#2e64e5', fontSize: 12, fontWeight: 'bold' },
-  promptText: { fontSize: 20, fontWeight: 'bold', color: '#382314', marginBottom: 24, lineHeight: 28 },
+  promptText: { fontSize: 20, fontWeight: 'bold', marginBottom: 24, lineHeight: 28 },
   gameBoard: { marginBottom: 24 },
   optionsContainer: { gap: 12 },
-  optionCard: { backgroundColor: '#ffffff', borderWidth: 2, borderColor: '#e0d8d0', borderRadius: 16, padding: 18 },
+  optionCard: { borderWidth: 2, borderRadius: 16, padding: 18 },
   optionCardSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
   optionCardCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9' },
   optionCardWrong: { borderColor: '#f44336', backgroundColor: '#ffebee' },
-  optionText: { fontSize: 16, color: '#333', fontWeight: '500', lineHeight: 22 },
+  optionText: { fontSize: 16, fontWeight: '500', lineHeight: 22 },
   optionTextSelected: { color: '#2e64e5', fontWeight: 'bold' },
   optionTextCorrect: { color: '#2e7d32', fontWeight: 'bold' },
   inputContainer: { width: '100%' },
-  textInput: { backgroundColor: '#ffffff', borderWidth: 2, borderColor: '#e0d8d0', borderRadius: 16, padding: 20, fontSize: 18, color: '#333' },
-  inputCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9' },
-  inputWrong: { borderColor: '#f44336', backgroundColor: '#ffebee' },
-  sentenceContainer: { backgroundColor: '#ffffff', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#e0d8d0', marginBottom: 20 },
-  sentenceText: { fontSize: 18, lineHeight: 28, color: '#333' },
+  textInput: { borderWidth: 2, borderRadius: 16, padding: 20, fontSize: 18 },
+  inputCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9', color: '#155724' },
+  inputWrong: { borderColor: '#f44336', backgroundColor: '#ffebee', color: '#721c24' },
+  sentenceContainer: { padding: 20, borderRadius: 16, borderWidth: 1, marginBottom: 20 },
+  sentenceText: { fontSize: 18, lineHeight: 28 },
   blankSpace: { color: '#999', textDecorationLine: 'underline' },
   filledBlank: { color: '#2e64e5', fontWeight: 'bold', textDecorationLine: 'none' },
-  instructionText: { fontSize: 14, color: '#666', marginBottom: 12, fontStyle: 'italic' },
+  instructionText: { fontSize: 14, marginBottom: 12, fontStyle: 'italic' },
   wordBank: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  wordChip: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d0ddff', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
+  wordChip: { borderWidth: 1, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
   wordChipSelected: { backgroundColor: '#2e64e5', borderColor: '#2e64e5' },
   wordChipText: { fontSize: 16, color: '#2e64e5', fontWeight: '600' },
   wordChipTextSelected: { color: '#ffffff' },
   matchingContainer: { flex: 1 },
   matchingColumns: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   column: { flex: 1, gap: 10 },
-  columnHeader: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5, textAlign: 'center' },
-  matchCard: { backgroundColor: '#ffffff', borderWidth: 2, borderColor: '#e0d8d0', borderRadius: 12, padding: 15, minHeight: 70, justifyContent: 'center', alignItems: 'center' },
+  columnHeader: { fontSize: 16, fontWeight: 'bold', marginBottom: 5, textAlign: 'center' },
+  matchCard: { borderWidth: 2, borderRadius: 12, padding: 15, minHeight: 70, justifyContent: 'center', alignItems: 'center' },
   matchCardSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
   matchCardMatched: { borderColor: '#4caf50', backgroundColor: '#e8f5e9', opacity: 0.8 },
-  matchText: { fontSize: 14, color: '#333', textAlign: 'center', fontWeight: '500' },
+  matchText: { fontSize: 14, textAlign: 'center', fontWeight: '500' },
   matchTextSelected: { color: '#2e64e5', fontWeight: 'bold' },
   resetButton: { marginTop: 20, padding: 10, alignSelf: 'center' },
   resetButtonText: { color: '#f44336', fontWeight: 'bold' },
@@ -512,7 +518,7 @@ const styles = StyleSheet.create({
   feedbackTextCorrect: { color: '#155724' },
   feedbackTextWrong: { color: '#721c24' },
   feedbackSubtitle: { fontSize: 14, color: '#721c24' },
-  footer: { padding: 20, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#e0d8d0' },
+  footer: { padding: 20, borderTopWidth: 1 },
   submitButton: { backgroundColor: '#2e64e5', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
   submitButtonDisabled: { backgroundColor: '#a0b9c1' },
   continueButton: { backgroundColor: '#4caf50' },
