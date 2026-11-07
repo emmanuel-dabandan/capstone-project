@@ -75,31 +75,31 @@ export default function StudentAnalytics() {
     });
     setEngagementData(dates.map(day => ({ name: day, xp: Math.floor(Math.random() * 5000) + 1000 })));
 
-    // 2. Radar Chart: ALS Competency Strands
+    // 2. Radar Chart: ALS Competency Strands (Official Subjects)
     setCompetencyData([
-      { subject: 'Comm Skills', A: 120, fullMark: 150 },
-      { subject: 'Problem Solving', A: 98, fullMark: 150 },
-      { subject: 'Sustainable Use', A: 86, fullMark: 150 },
-      { subject: 'Productivity', A: 110, fullMark: 150 },
-      { subject: 'Expanding World', A: 85, fullMark: 150 },
-      { subject: 'Filipino Identity', A: 130, fullMark: 150 },
+      { subject: 'Effective Comm.', A: 120, fullMark: 150 },
+      { subject: 'Gen Math', A: 98, fullMark: 150 },
+      { subject: 'Gen Science', A: 86, fullMark: 150 },
+      { subject: 'Life & Career', A: 110, fullMark: 150 },
+      { subject: 'Kasaysayan at Lipunan', A: 130, fullMark: 150 },
+      { subject: 'Strand Specialized', A: 105, fullMark: 150 },
     ]);
 
     // 3. Module Difficulty Heatmap
     setModuleHeatmap([
-      { title: 'Oral Comm: Week 1', passRate: 92, status: 'easy' },
-      { title: 'Gen Math: Week 3', passRate: 45, status: 'hard' },
-      { title: 'Cookery: Safety', passRate: 88, status: 'easy' },
-      { title: 'Earth Science: W2', passRate: 62, status: 'warning' },
+      { title: 'Effective Comm: Week 1', passRate: 92, status: 'easy' },
+      { title: 'General Math: Week 3', passRate: 45, status: 'hard' },
+      { title: 'Life & Career: Safety', passRate: 88, status: 'easy' },
+      { title: 'General Science: W2', passRate: 62, status: 'warning' },
     ]);
   };
 
   const exportToCSV = () => {
     const headers = ['Student Name', 'Total XP', 'Current Streak', 'Last Server Sync'];
     const rows = students.map(s => [
-      `"${s.first_name || 'Unknown'}"`, 
-      s.xp || 0, 
-      s.streak || 0, 
+      `"${s.first_name || 'Unknown'}"`,
+      s.xp || 0,
+      s.streak || 0,
       s.last_challenge_date ? new Date(s.last_challenge_date).toLocaleDateString() : 'Never'
     ]);
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -121,7 +121,7 @@ export default function StudentAnalytics() {
 
   return (
     <div style={styles.container}>
-      
+
       {/* HEADER */}
       <div style={styles.headerRow}>
         <div>
@@ -171,7 +171,7 @@ export default function StudentAnalytics() {
         </div>
 
         <div style={{...styles.card, flex: '1 1 300px'}}>
-          <h3 style={styles.cardTitle}>Competency Radar</h3>
+          <h3 style={styles.cardTitle}>Curriculum Competency Radar</h3>
           <div style={{ height: '250px', width: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart cx="50%" cy="50%" outerRadius="70%" data={competencyData}>

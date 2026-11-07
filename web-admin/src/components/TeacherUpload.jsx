@@ -2,23 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { FileText, Upload } from 'lucide-react';
 
 export default function TeacherUpload() {
-  // ... rest of your code
-  const [files, setFiles] = useState([]); 
+  const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [progress, setProgress] = useState(0);
 
-  
-  const [subject, setSubject] = useState('Cookery & Food Safety'); 
+  const [subject, setSubject] = useState('Effective Communication');
   const [week, setWeek] = useState('Week 1');
 
+  // Updated official subjects list
   const subjects = [
-    'Cookery & Food Safety', 
-    'Oral Communication', 
-    'General Mathematics', 
-    'Personal Development', 
-    'Earth & Life Science', 
-    'Understanding Culture'
+    'Effective Communication',
+    'General Mathematics',
+    'General Science',
+    'Life and Career Skills',
+    'Pag-aaral ng Kasaysayan at Lipunang Pilipino',
+    'Strand-Based Specialized Subject'
   ];
 
   const weeks = Array.from({ length: 10 }, (_, i) => `Week ${i + 1}`);
@@ -28,7 +27,7 @@ export default function TeacherUpload() {
     if (loading && progress < 90) {
       interval = setInterval(() => {
         setProgress((prev) => (prev < 90 ? prev + 1 : prev));
-      }, 500); 
+      }, 500);
     } else if (!loading) {
       clearInterval(interval);
     }
@@ -47,7 +46,6 @@ export default function TeacherUpload() {
     setMessage(`Uploading files and generating AI module for ${week}... This may take a minute.`);
 
     const formData = new FormData();
-    
     formData.append('subject', subject);
 
     Array.from(files).forEach((file) => {
@@ -65,7 +63,7 @@ export default function TeacherUpload() {
       const data = await response.json();
       if (data.success) {
         setProgress(100);
-        setMessage(`✅ Success! ${week} module is now live on the mobile app.`);
+        setMessage(`✅ Success! ${week} module for ${subject} is now live on the mobile app.`);
         document.getElementById('file-upload').value = '';
         setFiles([]);
       } else {
@@ -82,7 +80,6 @@ export default function TeacherUpload() {
 
   return (
     <div style={{ width: '100%', fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* Removed the 700px max-width constraint so it stretches like ModuleDatabase */}
       <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '12px', border: '1px solid #E3F2FD', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
         <h2 style={{ color: '#1A237E', marginTop: 0, marginBottom: '25px' }}>
           Create Interactive Module
@@ -123,7 +120,6 @@ export default function TeacherUpload() {
               Reference Documents (Select multiple if needed):
             </label>
 
-            {/* Hidden native file input */}
             <input
               id="file-upload"
               type="file"
@@ -133,7 +129,6 @@ export default function TeacherUpload() {
               style={{ display: 'none' }}
             />
 
-            {/* Custom styled dropzone with blue gradient */}
             <label
               htmlFor="file-upload"
               style={{
@@ -153,7 +148,6 @@ export default function TeacherUpload() {
                 boxShadow: 'inset 0 2px 15px rgba(26, 96, 179, 0.05)'
               }}
             >
-              {/* Icons Row */}
               <div style={{ display: 'flex', gap: '20px', marginBottom: '15px', alignItems: 'center' }}>
                 <div style={{ backgroundColor: 'white', padding: '10px', borderRadius: '8px', boxShadow: '0 2px 6px rgba(26, 96, 179, 0.1)' }}>
                   <FileText color="#1A60B3" size={28} />
@@ -163,12 +157,10 @@ export default function TeacherUpload() {
                 </div>
               </div>
 
-              {/* Main Text */}
               <p style={{ margin: '0 0 15px 0', color: '#1A237E', fontSize: '15px', fontWeight: '600' }}>
                 Drag and drop your files here or upload manually
               </p>
 
-              {/* Mock Button */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -186,13 +178,11 @@ export default function TeacherUpload() {
                 <Upload size={16} /> Select file
               </div>
 
-              {/* Helper Text */}
               <p style={{ margin: 0, color: '#546E7A', fontSize: '13px' }}>
                 Supported file types: Text (.txt), Word(.docx), PDF(.pdf)
               </p>
             </label>
 
-            {/* Selected Files Feedback */}
             {files.length > 0 && (
               <div style={{ marginTop: '15px', padding: '15px', backgroundColor: '#F8F9FA', border: '1px solid #E3F2FD', borderRadius: '8px' }}>
                 <p style={{ fontSize: '14px', color: '#1A60B3', margin: '0 0 8px 0', fontWeight: 'bold' }}>
