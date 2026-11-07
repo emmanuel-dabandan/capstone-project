@@ -59,7 +59,7 @@ function extractKeyTerms(text: string, excludeWord = ''): string[] {
   return unique;
 }
 
-// Smart generator: Creates varied activity types based on lessonIndex and lesson content
+// Smart generator: Creates varied activity types based on lessonIndex and lesson content (No Truncation)
 function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
   const rawText = (
     lesson?.full_module_text ||
@@ -72,7 +72,6 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
   const terms = extractKeyTerms(rawText);
   const title = lesson?.lesson_title || 'this lesson';
 
-  // Rotate activity type based on lesson index (0..4)
   const typesCycle = [
     'multiple_choice',
     'drag_and_drop',
@@ -82,7 +81,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
   ];
   const chosenType = typesCycle[Math.abs(lessonIdx) % typesCycle.length];
 
-  // 1. DRAG AND DROP (Word Bank Sentence Completion)
+  // 1. DRAG AND DROP
   if (chosenType === 'drag_and_drop' && sentences.length > 0 && terms.length >= 3) {
     const targetSentence =
       sentences.find((s) => s.length >= 45 && s.length <= 170 && terms.some((t) => s.includes(t))) ||
@@ -108,7 +107,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
     }
   }
 
-  // 2. MATCHING (Match Key Terms / Concepts to their Definitions)
+  // 2. MATCHING (Full sentences, no cutting off with '...')
   if (chosenType === 'matching' && (Array.isArray(lesson?.key_concepts) || sentences.length >= 3)) {
     const pairs: { term: string; definition: string }[] = [];
 
@@ -117,7 +116,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
         const firstSent = splitSentences(kc.concept_body)[0] || kc.concept_body;
         pairs.push({
           term: kc.concept_title || `Concept ${i + 1}`,
-          definition: firstSent.length > 90 ? firstSent.slice(0, 87) + '...' : firstSent,
+          definition: firstSent, // Full text, no truncation
         });
       });
     } else {
@@ -125,8 +124,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
       usableSentences.forEach((sent, idx) => {
         const sentTerms = extractKeyTerms(sent);
         const keyTerm = sentTerms[0] ? sentTerms[0].charAt(0).toUpperCase() + sentTerms[0].slice(1) : `Point ${idx + 1}`;
-        const shortDef = sent.length > 90 ? sent.slice(0, 87) + '...' : sent;
-        pairs.push({ term: keyTerm, definition: shortDef });
+        pairs.push({ term: keyTerm, definition: sent }); // Full text, no truncation
       });
     }
 
@@ -156,7 +154,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
     }
   }
 
-  // 4. TRUE OR FALSE (Fact-based statement from the lesson)
+  // 4. TRUE OR FALSE
   if (chosenType === 'true_false' && sentences.length > 0) {
     const factSentence = sentences[Math.min(1, sentences.length - 1)] || sentences[0];
     return {
@@ -167,14 +165,13 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
     };
   }
 
-  // 5. MULTIPLE CHOICE (Default / Lesson 1)
+  // 5. MULTIPLE CHOICE (Full sentence, no truncating with '...')
   if (sentences.length > 0) {
     const correctSent = sentences[Math.min(1, sentences.length - 1)] || sentences[0];
-    const shortCorrect = correctSent.length > 115 ? correctSent.slice(0, 112) + '...' : correctSent;
     const keyTopic = terms[0] || title;
 
     const options = [
-      shortCorrect,
+      correctSent, // Full sentence
       `It completely eliminates the need to evaluate ${keyTopic.toLowerCase()} in any scenario.`,
       `It states that ${keyTopic.toLowerCase()} remains fixed regardless of the data or context.`,
       `It only applies when no measurements or observations are recorded.`,
@@ -186,11 +183,10 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
         lesson?.knowledge_check_question ||
         `Which of the following statements accurately describes a core concept from "${title}"?`,
       options,
-      correct_answer: shortCorrect,
+      correct_answer: correctSent,
     };
   }
 
-  // Ultimate fallback
   return {
     activity_type: 'true_false',
     question_prompt: `Did you finish reviewing "${title}" and understand its main concepts?`,
@@ -225,7 +221,6 @@ export default function ActivityScreen() {
         if (parsed.activity && parsed.activity.question_prompt && parsed.activity.activity_type) {
           setActivity(parsed.activity);
         } else {
-          // Dynamically build a varied activity type based on lessonIndex & content
           setActivity(buildVariedActivityFromLesson(parsed, lessonIdxNum));
         }
       } catch (e) {
@@ -299,7 +294,6 @@ export default function ActivityScreen() {
     const totalCount = Math.max(1, parseInt((totalLessons as string) || '5', 10));
     const targetProgress = Math.min(100, Math.round((completedCount / totalCount) * 100));
 
-    // 1. Save immediately to local AsyncStorage so lesson.tsx ALWAYS unlocks on first try
     try {
       const raw = await AsyncStorage.getItem(PROGRESS_STORAGE_KEY);
       const map: Record<string, number> = raw ? JSON.parse(raw) : {};
@@ -310,7 +304,6 @@ export default function ActivityScreen() {
       console.error('Local progress save error:', e);
     }
 
-    // 2. Also update Supabase database
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
@@ -352,16 +345,6 @@ export default function ActivityScreen() {
         } catch (err) {
           console.error('XP Update Failed:', err);
         }
-
-        try {
-          await supabase.from('notifications').insert({
-            student_id: user.id,
-            message: 'Great job! You mastered a lesson and earned 50 XP.',
-            type: 'new_module',
-          });
-        } catch (err) {
-          console.error('Notification Insert Failed:', err);
-        }
       }
     } catch (err) {
       console.error('Supabase Progress Update Failed:', err);
@@ -397,7 +380,6 @@ export default function ActivityScreen() {
     const targetSubject = (subject as string) || subjectName || 'Course Modules';
     const unlockedLessonsCount = String(lessonIdxNum + 1);
 
-    // Pop both activity.tsx and learning.tsx off the stack and return cleanly to lesson.tsx
     try {
       router.replace({
         pathname: '/lesson',
@@ -731,9 +713,9 @@ const styles = StyleSheet.create({
   optionCardSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
   optionCardCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9' },
   optionCardWrong: { borderColor: '#f44336', backgroundColor: '#ffebee' },
-  optionText: { fontSize: 16, fontWeight: '500', lineHeight: 22 },
+  optionText: { fontSize: 15, fontWeight: '500', lineHeight: 22 }, // Allows natural wrapping
   optionTextSelected: { color: '#2e64e5', fontWeight: 'bold' },
-  optionTextCorrect: { color: '#2e7d32', fontWeight: 'bold' },
+  optionTextCorrect: { color: '#155724', fontWeight: 'bold' },
   inputContainer: { width: '100%' },
   textInput: { borderWidth: 2, borderRadius: 16, padding: 20, fontSize: 18 },
   inputCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9', color: '#155724' },
@@ -755,7 +737,7 @@ const styles = StyleSheet.create({
   matchCard: { borderWidth: 2, borderRadius: 12, padding: 15, minHeight: 70, justifyContent: 'center', alignItems: 'center' },
   matchCardSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
   matchCardMatched: { borderColor: '#4caf50', backgroundColor: '#e8f5e9', opacity: 0.8 },
-  matchText: { fontSize: 14, textAlign: 'center', fontWeight: '500' },
+  matchText: { fontSize: 13, textAlign: 'center', fontWeight: '500', lineHeight: 18 },
   matchTextSelected: { color: '#2e64e5', fontWeight: 'bold' },
   resetButton: { marginTop: 20, padding: 10, alignSelf: 'center' },
   resetButtonText: { color: '#f44336', fontWeight: 'bold' },
