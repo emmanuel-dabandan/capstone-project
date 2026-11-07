@@ -1,18 +1,211 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useAppTheme } from '../lib/ThemeContext';
+
+export const PROGRESS_STORAGE_KEY = '@als_module_progress_v1';
+
+// Helper: Split text into clean sentences without breaking decimals like 0.05
+function splitSentences(text: string): string[] {
+  const cleaned = (text || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const matches = cleaned.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g);
+  return matches ? matches.map((s) => s.trim()).filter((s) => s.length > 20) : [cleaned];
+}
+
+// Helper: Extract important keywords (5+ letters) from lesson text
+function extractKeyTerms(text: string, excludeWord = ''): string[] {
+  const stopWords = new Set([
+    'about', 'above', 'after', 'again', 'against', 'all', 'also', 'always', 'among', 'another',
+    'because', 'before', 'being', 'below', 'between', 'both', 'cannot', 'could', 'determine',
+    'different', 'during', 'each', 'either', 'establish', 'established', 'every', 'example',
+    'first', 'following', 'found', 'from', 'further', 'given', 'having', 'however', 'important',
+    'include', 'including', 'instance', 'into', 'means', 'more', 'most', 'never', 'other',
+    'others', 'otherwise', 'over', 'particular', 'people', 'process', 'provide', 'provides',
+    'rather', 'really', 'refer', 'refers', 'regarding', 'related', 'represents', 'researchers',
+    'result', 'results', 'same', 'second', 'section', 'several', 'should', 'shown', 'since',
+    'small', 'smaller', 'some', 'something', 'specific', 'specifically', 'state', 'states',
+    'still', 'study', 'such', 'system', 'systems', 'their', 'them', 'then', 'there', 'therefore',
+    'these', 'they', 'thing', 'things', 'think', 'third', 'this', 'those', 'three', 'through',
+    'together', 'under', 'understand', 'using', 'usually', 'value', 'values', 'various', 'where',
+    'whether', 'which', 'while', 'within', 'without', 'would', 'lesson', 'module'
+  ]);
+
+  const words = (text || '')
+    .replace(/[^a-zA-Z\s-]/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(
+      (w) =>
+        w.length >= 5 &&
+        w.length <= 16 &&
+        !stopWords.has(w.toLowerCase()) &&
+        w.toLowerCase() !== excludeWord.toLowerCase()
+    );
+
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const w of words) {
+    const low = w.toLowerCase();
+    if (!seen.has(low)) {
+      seen.add(low);
+      unique.push(w);
+    }
+  }
+  return unique;
+}
+
+// Smart generator: Creates varied activity types based on lessonIndex and lesson content
+function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
+  const rawText = (
+    lesson?.full_module_text ||
+    lesson?.core_text ||
+    lesson?.overview_body ||
+    ''
+  ).trim();
+
+  const sentences = splitSentences(rawText);
+  const terms = extractKeyTerms(rawText);
+  const title = lesson?.lesson_title || 'this lesson';
+
+  // Rotate activity type based on lesson index (0..4)
+  const typesCycle = [
+    'multiple_choice',
+    'drag_and_drop',
+    'matching',
+    'fill_in_blanks',
+    'true_false',
+  ];
+  const chosenType = typesCycle[Math.abs(lessonIdx) % typesCycle.length];
+
+  // 1. DRAG AND DROP (Word Bank Sentence Completion)
+  if (chosenType === 'drag_and_drop' && sentences.length > 0 && terms.length >= 3) {
+    const targetSentence =
+      sentences.find((s) => s.length >= 45 && s.length <= 170 && terms.some((t) => s.includes(t))) ||
+      sentences[0];
+    const targetWord = terms.find((t) => targetSentence.includes(t)) || terms[0];
+
+    if (targetSentence && targetWord && targetSentence.includes(targetWord)) {
+      const blankedSentence = targetSentence.replace(targetWord, '____');
+      const distractors = terms
+        .filter((t) => t.toLowerCase() !== targetWord.toLowerCase())
+        .slice(0, 3);
+      while (distractors.length < 3) {
+        distractors.push(['variance', 'parameter', 'constant', 'interval'][distractors.length]);
+      }
+      const options = [targetWord, ...distractors].sort((a, b) => a.localeCompare(b));
+
+      return {
+        activity_type: 'drag_and_drop',
+        question_prompt: blankedSentence,
+        options,
+        correct_answer: targetWord,
+      };
+    }
+  }
+
+  // 2. MATCHING (Match Key Terms / Concepts to their Definitions)
+  if (chosenType === 'matching' && (Array.isArray(lesson?.key_concepts) || sentences.length >= 3)) {
+    const pairs: { term: string; definition: string }[] = [];
+
+    if (Array.isArray(lesson?.key_concepts) && lesson.key_concepts.length >= 3) {
+      lesson.key_concepts.slice(0, 3).forEach((kc: any, i: number) => {
+        const firstSent = splitSentences(kc.concept_body)[0] || kc.concept_body;
+        pairs.push({
+          term: kc.concept_title || `Concept ${i + 1}`,
+          definition: firstSent.length > 90 ? firstSent.slice(0, 87) + '...' : firstSent,
+        });
+      });
+    } else {
+      const usableSentences = sentences.slice(0, 3);
+      usableSentences.forEach((sent, idx) => {
+        const sentTerms = extractKeyTerms(sent);
+        const keyTerm = sentTerms[0] ? sentTerms[0].charAt(0).toUpperCase() + sentTerms[0].slice(1) : `Point ${idx + 1}`;
+        const shortDef = sent.length > 90 ? sent.slice(0, 87) + '...' : sent;
+        pairs.push({ term: keyTerm, definition: shortDef });
+      });
+    }
+
+    if (pairs.length >= 2) {
+      return {
+        activity_type: 'matching',
+        question_prompt: `Match each key term from "${title}" with its corresponding statement:`,
+        matching_pairs: pairs,
+      };
+    }
+  }
+
+  // 3. FILL IN THE BLANKS
+  if (chosenType === 'fill_in_blanks' && sentences.length > 0 && terms.length >= 1) {
+    const targetSentence =
+      sentences.find((s) => s.length >= 40 && s.length <= 160 && terms.some((t) => s.includes(t))) ||
+      sentences[0];
+    const targetWord = terms.find((t) => targetSentence.includes(t)) || terms[0];
+
+    if (targetSentence && targetWord && targetSentence.includes(targetWord)) {
+      const blanked = targetSentence.replace(targetWord, '_______');
+      return {
+        activity_type: 'fill_in_blanks',
+        question_prompt: `Fill in the missing term (Hint: starts with "${targetWord.slice(0, 2)}", ${targetWord.length} letters):\n\n"${blanked}"`,
+        correct_answer: targetWord,
+      };
+    }
+  }
+
+  // 4. TRUE OR FALSE (Fact-based statement from the lesson)
+  if (chosenType === 'true_false' && sentences.length > 0) {
+    const factSentence = sentences[Math.min(1, sentences.length - 1)] || sentences[0];
+    return {
+      activity_type: 'true_false',
+      question_prompt: `True or False: Based on "${title}", ${factSentence.charAt(0).toLowerCase() + factSentence.slice(1)}`,
+      options: ['True', 'False'],
+      correct_answer: 'True',
+    };
+  }
+
+  // 5. MULTIPLE CHOICE (Default / Lesson 1)
+  if (sentences.length > 0) {
+    const correctSent = sentences[Math.min(1, sentences.length - 1)] || sentences[0];
+    const shortCorrect = correctSent.length > 115 ? correctSent.slice(0, 112) + '...' : correctSent;
+    const keyTopic = terms[0] || title;
+
+    const options = [
+      shortCorrect,
+      `It completely eliminates the need to evaluate ${keyTopic.toLowerCase()} in any scenario.`,
+      `It states that ${keyTopic.toLowerCase()} remains fixed regardless of the data or context.`,
+      `It only applies when no measurements or observations are recorded.`,
+    ];
+
+    return {
+      activity_type: 'multiple_choice',
+      question_prompt:
+        lesson?.knowledge_check_question ||
+        `Which of the following statements accurately describes a core concept from "${title}"?`,
+      options,
+      correct_answer: shortCorrect,
+    };
+  }
+
+  // Ultimate fallback
+  return {
+    activity_type: 'true_false',
+    question_prompt: `Did you finish reviewing "${title}" and understand its main concepts?`,
+    options: ['True', 'False'],
+    correct_answer: 'True',
+  };
+}
 
 export default function ActivityScreen() {
   const { theme } = useAppTheme();
   const { lessonData, subject, moduleId, lessonIndex, totalLessons } = useLocalSearchParams();
   const [lesson, setLesson] = useState<any>(null);
   const [activity, setActivity] = useState<any>(null);
-  const [nextLesson, setNextLesson] = useState<any>(null);
   const [subjectName, setSubjectName] = useState<string>((subject as string) || '');
+  const [isSavingProgress, setIsSavingProgress] = useState(false);
 
   const [userAnswer, setUserAnswer] = useState<string>('');
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -21,35 +214,25 @@ export default function ActivityScreen() {
   const [matchedPairs, setMatchedPairs] = useState<Record<string, string>>({});
   const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
 
+  const lessonIdxNum = parseInt((lessonIndex as string) || '0', 10);
+
   useEffect(() => {
     if (lessonData) {
       try {
         const parsed = JSON.parse(lessonData as string);
         setLesson(parsed);
 
-        if (parsed.activity && parsed.activity.question_prompt) {
+        if (parsed.activity && parsed.activity.question_prompt && parsed.activity.activity_type) {
           setActivity(parsed.activity);
-        } else if (parsed.knowledge_check_question) {
-          // Fallback for lessons uploaded with the older schema
-          setActivity({
-            activity_type: 'true_false',
-            question_prompt: `${parsed.knowledge_check_question}\n\n(Self-Check: Select True once you can answer and explain this concept from "${parsed.lesson_title || 'this lesson'}".)`,
-            options: ['True', 'False'],
-            correct_answer: 'True',
-          });
         } else {
-          setActivity({
-            activity_type: 'true_false',
-            question_prompt: `Have you completed reading "${parsed.lesson_title || 'this lesson'}" and reviewed its key points?`,
-            options: ['True', 'False'],
-            correct_answer: 'True',
-          });
+          // Dynamically build a varied activity type based on lessonIndex & content
+          setActivity(buildVariedActivityFromLesson(parsed, lessonIdxNum));
         }
       } catch (e) {
         console.error('Failed to parse lesson data', e);
       }
     }
-  }, [lessonData]);
+  }, [lessonData, lessonIdxNum]);
 
   const isAnswerCorrect = (userAns: string, act: any): boolean => {
     if (!act) return false;
@@ -104,10 +287,88 @@ export default function ActivityScreen() {
   if (!activity) {
     return (
       <SafeAreaView style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
-        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading Activity...</Text>
+        <ActivityIndicator size="large" color="#2e64e5" />
+        <Text style={[styles.loadingText, { color: theme.textSecondary, marginTop: 12 }]}>Loading Activity...</Text>
       </SafeAreaView>
     );
   }
+
+  const recordLessonCompletion = async () => {
+    setIsSavingProgress(true);
+    const completedCount = lessonIdxNum + 1;
+    const totalCount = Math.max(1, parseInt((totalLessons as string) || '5', 10));
+    const targetProgress = Math.min(100, Math.round((completedCount / totalCount) * 100));
+
+    // 1. Save immediately to local AsyncStorage so lesson.tsx ALWAYS unlocks on first try
+    try {
+      const raw = await AsyncStorage.getItem(PROGRESS_STORAGE_KEY);
+      const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+      const key = String(moduleId || subject || subjectName || 'default');
+      map[key] = Math.max(map[key] || 0, completedCount);
+      await AsyncStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(map));
+    } catch (e) {
+      console.error('Local progress save error:', e);
+    }
+
+    // 2. Also update Supabase database
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (moduleId) {
+        const { data: modRow } = await supabase
+          .from('ai_lessons')
+          .select('id, progress, title')
+          .eq('id', moduleId)
+          .maybeSingle();
+
+        if (modRow) {
+          if (modRow.title) setSubjectName(modRow.title);
+          const newProgress = Math.max(modRow.progress || 0, targetProgress);
+          await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', modRow.id);
+        }
+      } else {
+        const { data: allModules } = await supabase
+          .from('ai_lessons')
+          .select('id, progress, parsed_content, title');
+
+        const currentTitle = lesson?.lesson_title || lesson?.title;
+        const parentMod = allModules?.find((m: any) =>
+          m.parsed_content?.lessons?.some((l: any) => (l.lesson_title || l.title) === currentTitle)
+        );
+
+        if (parentMod) {
+          if (parentMod.title) setSubjectName(parentMod.title);
+          const newProgress = Math.max(parentMod.progress || 0, targetProgress);
+          await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', parentMod.id);
+        }
+      }
+
+      if (user) {
+        try {
+          const { data: profile } = await supabase.from('students').select('xp').eq('id', user.id).single();
+          const newXp = (profile?.xp || 0) + 50;
+          await supabase.from('students').update({ xp: newXp }).eq('id', user.id);
+          await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 50 });
+        } catch (err) {
+          console.error('XP Update Failed:', err);
+        }
+
+        try {
+          await supabase.from('notifications').insert({
+            student_id: user.id,
+            message: 'Great job! You mastered a lesson and earned 50 XP.',
+            type: 'new_module',
+          });
+        } catch (err) {
+          console.error('Notification Insert Failed:', err);
+        }
+      }
+    } catch (err) {
+      console.error('Supabase Progress Update Failed:', err);
+    } finally {
+      setIsSavingProgress(false);
+    }
+  };
 
   const checkAnswer = async () => {
     let correct = false;
@@ -128,76 +389,24 @@ export default function ActivityScreen() {
     setIsSubmitted(true);
 
     if (correct) {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (user) {
-        try {
-          const { data: profile } = await supabase.from('students').select('xp').eq('id', user.id).single();
-          const newXp = (profile?.xp || 0) + 50;
-          await supabase.from('students').update({ xp: newXp }).eq('id', user.id);
-          await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 50 });
-        } catch (err) {
-          console.error('XP Update Failed:', err);
-        }
-
-        try {
-          const { data: allModules } = await supabase
-            .from('ai_lessons')
-            .select('id, progress, parsed_content, title');
-
-          const currentTitle = lesson?.lesson_title || lesson?.title;
-          const parentMod =
-            (moduleId && allModules?.find((m: any) => String(m.id) === String(moduleId))) ||
-            allModules?.find((m: any) =>
-              m.parsed_content?.lessons?.some((l: any) => (l.lesson_title || l.title) === currentTitle)
-            );
-
-          if (parentMod) {
-            if (parentMod.title) setSubjectName(parentMod.title);
-            const lessonsArray = parentMod.parsed_content?.lessons || [];
-            const totalLessonsInModule = lessonsArray.length || 1;
-
-            const currentIndex = lessonsArray.findIndex(
-              (l: any) => (l.lesson_title || l.title) === currentTitle
-            );
-            const idxNum = currentIndex !== -1 ? currentIndex : parseInt((lessonIndex as string) || '0', 10);
-
-            // Ensure progress moves forward to at least the completed lesson index
-            const targetProgress = Math.min(
-              100,
-              Math.round(((idxNum + 1) / totalLessonsInModule) * 100)
-            );
-            const newProgress = Math.max(parentMod.progress || 0, targetProgress);
-
-            await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', parentMod.id);
-
-            if (idxNum + 1 < lessonsArray.length) {
-              setNextLesson(lessonsArray[idxNum + 1]);
-            }
-          }
-        } catch (err) {
-          console.error('Progress Update Failed:', err);
-        }
-
-        try {
-          await supabase.from('notifications').insert({
-            student_id: user.id,
-            message: 'Great job! You mastered a lesson and earned 50 XP.',
-            type: 'new_module',
-          });
-        } catch (err) {
-          console.error('Notification Insert Failed:', err);
-        }
-      }
+      await recordLessonCompletion();
     }
   };
 
   const handleContinue = () => {
+    const targetSubject = (subject as string) || subjectName || 'Course Modules';
+    const unlockedLessonsCount = String(lessonIdxNum + 1);
+
+    // Pop both activity.tsx and learning.tsx off the stack and return cleanly to lesson.tsx
     try {
-      const targetSubject = (subject as string) || subjectName || 'Course Modules';
-      router.navigate({
+      router.replace({
         pathname: '/lesson',
-        params: { subject: targetSubject },
+        params: {
+          subject: targetSubject,
+          moduleId: (moduleId as string) || '',
+          unlockedCount: unlockedLessonsCount,
+          refreshTs: String(Date.now()),
+        },
       } as any);
     } catch (error) {
       console.error('Routing error:', error);
@@ -490,9 +699,14 @@ export default function ActivityScreen() {
           <TouchableOpacity
             style={[styles.submitButton, isCorrect ? styles.continueButton : styles.retryButton]}
             activeOpacity={0.8}
+            disabled={isSavingProgress}
             onPress={() => (isCorrect ? handleContinue() : setIsSubmitted(false))}
           >
-            <Text style={styles.submitButtonText}>{isCorrect ? 'Continue Learning' : 'Try Again'}</Text>
+            {isSavingProgress ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.submitButtonText}>{isCorrect ? 'Continue Learning' : 'Try Again'}</Text>
+            )}
           </TouchableOpacity>
         )}
       </View>

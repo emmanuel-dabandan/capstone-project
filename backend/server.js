@@ -21,6 +21,15 @@ import { registerStudyMaterials } from './studyMaterials.js';
 
 dotenv.config();
 
+// Official Core Subjects + Strand-Based Subject Support
+export const CORE_SUBJECTS = [
+  'Effective Communication',
+  'General Mathematics',
+  'General Science',
+  'Life and Career Skills',
+  'Pag-aaral ng Kasaysayan at Lipunang Pilipino',
+];
+
 // Ensure uploads folder always exists (optional with memory storage, but safe to keep)
 fs.mkdirSync('uploads', { recursive: true });
 
@@ -102,16 +111,56 @@ async function generateWithRetry(contents, config, maxAttempts = 4) {
 // Register on-demand flashcard (10) + practice pool (20) generator
 const studyMaterials = registerStudyMaterials(app, { supabase, admin: supabaseAdmin, ai });
 
+// --- 🟢 SUBJECTS CATALOG ROUTE ---
+app.get('/api/subjects', (req, res) => {
+  const strandSubject = cleanParam(req.query.strand || req.query.strandSubject);
+  const subjects = strandSubject ? [...CORE_SUBJECTS, strandSubject] : [...CORE_SUBJECTS];
+  res.json({ core_subjects: CORE_SUBJECTS, subjects });
+});
+
 // --- 🟢 AI RECOMMENDATION ROUTE ---
 app.get('/api/ai-recommendation/:userId', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   try {
     const { userId } = req.params;
 
+    // Check student's strand / specialization if available so recommendations match their 5 core + 1 strand subject
+    let studentStrand = '';
+    try {
+      const { data: studentProfile } = await supabase
+        .from('students')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+      studentStrand = (
+        studentProfile?.strand_subject ||
+        studentProfile?.specialization ||
+        studentProfile?.elective ||
+        studentProfile?.strand ||
+        ''
+      ).trim();
+    } catch {
+      // Ignore if students table does not have strand column yet
+    }
+
     const { data: lessonRows, error: lessonsError } = await supabase
       .from('ai_lessons')
       .select('title, progress');
     if (lessonsError) throw lessonsError;
+
+    // Filter to the 5 Core Subjects + the student's specific strand subject (if set)
+    const coreSet = new Set(CORE_SUBJECTS.map((s) => normTitle(s)));
+    const filteredLessons =
+      studentStrand && Array.isArray(lessonRows)
+        ? lessonRows.filter((row) => {
+            const t = normTitle(row.title);
+            return (
+              coreSet.has(t) ||
+              t === normTitle(studentStrand) ||
+              t.includes(normTitle(studentStrand))
+            );
+          })
+        : lessonRows;
 
     const { data: grades, error: gradesError } = await supabase
       .from('quiz_grades')
@@ -120,7 +169,10 @@ app.get('/api/ai-recommendation/:userId', async (req, res) => {
       .limit(50);
     if (gradesError) throw gradesError;
 
-    const pick = pickRecommendationTarget(lessonRows, grades);
+    const pick = pickRecommendationTarget(
+      filteredLessons && filteredLessons.length > 0 ? filteredLessons : lessonRows,
+      grades
+    );
     if (!pick) {
       return res.status(404).json({ error: "No lessons have been uploaded yet." });
     }
@@ -227,7 +279,7 @@ async function handleLessonUpload(req, res) {
       throw new Error("GEMINI_API_KEY is missing on the server.");
     }
 
-    const selectedSubject = (req.body?.subject || req.body?.title || 'Uncategorized').trim();
+    const selectedSubject = (req.body?.subject || req.body?.title || 'Effective Communication').trim();
 
     console.log(`--- UPLOADING MODULE FOR: ${selectedSubject} ---`);
     console.log(`1. Preparing PDF (${uploadedFile.originalname}, ${uploadedFile.size} bytes) in memory...`);
@@ -243,19 +295,20 @@ async function handleLessonUpload(req, res) {
     const parsedJsonData = await generateWithRetry(
       [
         pdfPart,
-        `Analyze the provided educational PDF and transform it into a structured, self-paced learning module for Alternative Learning System (ALS) students. Follow these strict guidelines:
+        `Analyze the provided educational PDF for the subject "${selectedSubject}" and transform it into a structured, self-paced learning module for Alternative Learning System (ALS) students. Follow these strict guidelines:
 
         1. 5-Part Structure: Divide the core instructional content sequentially into exactly 5 distinct learning sections (lessons).
         2. AI Overview & Key Concepts: For each lesson, provide:
-                   - "overview_title": A concise title for the AI summary card.
-                   - "overview_body": A short 2-3 sentence executive summary explaining the core takeaway of the section.
-                   - "key_concepts": Break the section's key ideas into 3 to 5 distinct concepts depending on how broad or detailed the section's scope is (3 for focused topics, 4 for moderate scope, 5 for dense/multi-part topics), each with a short "concept_title" and clear 1-3 sentence "concept_body".
+           - "overview_title": A concise title for the AI summary card.
+           - "overview_body": A short 2-3 sentence executive summary explaining the core takeaway of the section.
+           - "key_concepts": Break the section's key ideas into 3 to 5 distinct concepts depending on how broad or detailed the section's scope is (3 for focused topics, 4 for moderate scope, 5 for dense/multi-part topics), each with a short "concept_title" and clear 1-3 sentence "concept_body".
         3. Full Module Text: Provide comprehensive instructional explanations, examples, and step-by-step teaching content inside "full_module_text" (and copy the same text to "core_text" for backward compatibility, aiming for 300 to 500 words per section).
-        4. Interactive Activity: For each lesson, create an "activity" object with:
-           - "activity_type": "multiple_choice"
-           - "question_prompt": A clear comprehension or application question based on that lesson.
-           - "options": An array of 4 distinct answer choices.
-           - "correct_answer": Must match one of the 4 strings in "options" EXACTLY.
+        4. Interactive Activity (Vary Across Lessons): For each of the 5 lessons, create an "activity" object choosing the activity type that best fits that lesson's content so the 5 lessons use a variety of types:
+           - Lesson 1: "multiple_choice" (provide 4 distinct answer choices in "options", and set "correct_answer" to match one string in "options" EXACTLY).
+           - Lesson 2: "drag_and_drop" ("question_prompt" must be a sentence from the lesson containing "____" for a missing keyword, "options" must have 4 word choices, and "correct_answer" must be the exact missing word).
+           - Lesson 3: "matching" ("question_prompt" instruction, and "matching_pairs" array with 3 items of {"term": "...", "definition": "..."}).
+           - Lesson 4: "fill_in_blanks" ("question_prompt" sentence with a blank "_______", and "correct_answer" set to the single key term).
+           - Lesson 5: "true_false" ("question_prompt" factual statement based on the lesson, "options": ["True", "False"], and "correct_answer": "True" or "False").
         5. Exclusions: Entirely skip and exclude any group activities, pair work, or classroom exercises.
 
         Output ONLY a valid JSON object matching the requested schema.`
@@ -303,9 +356,20 @@ async function handleLessonUpload(req, res) {
                         type: Type.ARRAY,
                         items: { type: Type.STRING }
                       },
-                      correct_answer: { type: Type.STRING }
+                      correct_answer: { type: Type.STRING },
+                      matching_pairs: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            term: { type: Type.STRING },
+                            definition: { type: Type.STRING }
+                          },
+                          required: ["term", "definition"]
+                        }
+                      }
                     },
-                    required: ["activity_type", "question_prompt", "options", "correct_answer"]
+                    required: ["activity_type", "question_prompt"]
                   }
                 },
                 required: [

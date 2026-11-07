@@ -30,12 +30,16 @@ const hashString = (text: string) => {
 
 const getSubjectIcon = (name: string) => {
   const n = name.toLowerCase();
-  if (/cook|food|kitchen|culinary|bak(e|ing)|nutrition/.test(n)) return 'restaurant';
-  if (/math|numer|algebra|geometry|arithmetic|stat|probab/.test(n)) return 'calculator';
-  if (/english|filipino|communicat|language|literacy|reading|writing/.test(n)) return 'chatbubbles';
-  if (/science|biolog|chemi|physics/.test(n)) return 'flask';
-  if (/social|history|civic|govern|geograph/.test(n)) return 'earth';
-  if (/digital|computer|ict|technolog/.test(n)) return 'laptop';
+  if (/effective\s*communicat|english|filipino|communicat|language|literacy|reading|writing/.test(n)) return 'chatbubbles';
+  if (/general\s*math|math|numer|algebra|geometry|arithmetic|stat|probab/.test(n)) return 'calculator';
+  if (/general\s*science|science|biolog|chemi|physics|earth\s*science/.test(n)) return 'flask';
+  if (/life\s*and\s*career|career|work|employ|entrepreneur|personal\s*develop/.test(n)) return 'briefcase';
+  if (/kasaysayan|lipunang\s*pilipino|araling\s*panlipunan|social|history|civic|govern|geograph|philippine/.test(n)) return 'earth';
+  if (/cook|food|kitchen|culinary|bak(e|ing)|nutrition|cbf|beverage/.test(n)) return 'restaurant';
+  if (/digital|computer|ict|technolog|programming/.test(n)) return 'laptop';
+  if (/abm|account|business|finance|marketing/.test(n)) return 'stats-chart';
+  if (/stem|engineer|calculus|robotics/.test(n)) return 'construct';
+  if (/humss|humanities|politics|creative/.test(n)) return 'library';
   return FALLBACK_ICONS[hashString(n) % FALLBACK_ICONS.length];
 };
 

@@ -3,8 +3,10 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useAppTheme } from '../lib/ThemeContext';
+import { PROGRESS_STORAGE_KEY } from './activity';
 
 interface ParsedLesson {
   lesson_title: string;
@@ -38,10 +40,11 @@ interface QuizGradeRecord {
 export default function LessonScreen() {
   const { theme } = useAppTheme();
   const router = useRouter();
-  const { subject } = useLocalSearchParams();
+  const { subject, moduleId, unlockedCount, refreshTs } = useLocalSearchParams();
   const subjectName = typeof subject === 'string' ? subject : 'Course Modules';
 
   const [modules, setModules] = useState<DBRow[]>([]);
+  const [localProgressMap, setLocalProgressMap] = useState<Record<string, number>>({});
   const [quizGrades, setQuizGrades] = useState<QuizGradeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedModuleId, setExpandedModuleId] = useState<string | null>(null);
@@ -49,12 +52,23 @@ export default function LessonScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchModules();
-    }, [subjectName])
+    }, [subjectName, moduleId, unlockedCount, refreshTs])
   );
 
   const fetchModules = async () => {
     try {
       setLoading(true);
+
+      // Load local completed lesson counts
+      try {
+        const raw = await AsyncStorage.getItem(PROGRESS_STORAGE_KEY);
+        if (raw) {
+          setLocalProgressMap(JSON.parse(raw));
+        }
+      } catch (e) {
+        console.error('Error reading local progress:', e);
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
 
       let query = supabase.from('ai_lessons').select('*').order('created_at', { ascending: true }).limit(12);
@@ -64,7 +78,10 @@ export default function LessonScreen() {
       const { data, error } = await query;
       if (error) throw error;
       setModules(data || []);
-      if (data && data.length > 0 && !expandedModuleId) {
+
+      if (moduleId && typeof moduleId === 'string') {
+        setExpandedModuleId(moduleId);
+      } else if (data && data.length > 0 && !expandedModuleId) {
         setExpandedModuleId(data[0].id);
       }
 
@@ -120,7 +137,16 @@ export default function LessonScreen() {
       <View style={[styles.container, { backgroundColor: theme.bg }]}>
 
         <View style={styles.topNav}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/learn' as any);
+              }
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <View style={[styles.moduleBadge, theme.isDark && { backgroundColor: '#1e3a8a' }]}>
@@ -151,7 +177,17 @@ export default function LessonScreen() {
               const estTime = parsed?.total_estimated_time || 0;
 
               const totalLessons = lessons.length || 1;
-              const completedLessons = Math.round(((mod.progress || 0) / 100) * totalLessons);
+              const dbCompleted = Math.round(((mod.progress || 0) / 100) * totalLessons);
+              const localCompleted =
+                localProgressMap[String(mod.id)] ||
+                localProgressMap[mod.title || subjectName] ||
+                0;
+              const paramCompleted =
+                moduleId && String(mod.id) === String(moduleId) && unlockedCount
+                  ? parseInt(String(unlockedCount), 10) || 0
+                  : 0;
+
+              const completedLessons = Math.max(dbCompleted, localCompleted, paramCompleted);
 
               const allLessonsDone = lessons.length > 0 && completedLessons >= lessons.length;
               const recordedGrade = findModuleGrade(mod.title || subjectName, moduleTitle, modules.length === 1);
@@ -197,7 +233,7 @@ export default function LessonScreen() {
                                 params: {
                                   lessonData: JSON.stringify(lesson),
                                   subject: mod.title || subjectName,
-                                  moduleId: mod.id,
+                                  moduleId: String(mod.id),
                                   lessonIndex: String(index),
                                   totalLessons: String(lessons.length),
                                 }

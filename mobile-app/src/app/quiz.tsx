@@ -44,10 +44,15 @@ export default function QuizScreen() {
   const [score, setScore] = useState(0);
 
   const navigateHome = () => {
-    if (router.canDismiss()) {
-      router.dismissAll();
+    try {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+      router.replace('/home' as any);
+    } catch {
+      router.replace('/' as any);
     }
-    router.replace('/learn' as any);
   };
 
   useEffect(() => {
@@ -94,7 +99,7 @@ export default function QuizScreen() {
       }
 
       const response = await fetch(
-        `${API_BASE_URL}/api/generate-quiz?subjectTitle=${encodeURIComponent(subjectTitle)}&moduleTitle=${encodeURIComponent(subjectTitle)}`,
+        `${API_BASE_URL}/api/generate-quiz?subjectTitle=${encodeURIComponent(subjectTitle)}&moduleTitle=${encodeURIComponent(gradeTitle)}`,
         { signal: controller.signal, headers: { Accept: 'application/json' } }
       );
 
@@ -209,7 +214,7 @@ export default function QuizScreen() {
           </View>
 
           <TouchableOpacity style={styles.returnButton} onPress={navigateHome}>
-            <Text style={styles.returnButtonText}>View Quiz Grades</Text>
+            <Text style={styles.returnButtonText}>Back to Module</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -234,7 +239,7 @@ export default function QuizScreen() {
           )}
 
           <TouchableOpacity style={styles.backLink} onPress={navigateHome}>
-            <Text style={styles.backLinkText}>Return to Learn</Text>
+            <Text style={styles.backLinkText}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
