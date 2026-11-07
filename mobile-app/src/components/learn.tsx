@@ -19,6 +19,39 @@ import {
 const SUBJECT_COLORS = ['#5480e5', '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
 const FALLBACK_ICONS = ['bulb', 'earth', 'library', 'school', 'rocket', 'extension-puzzle'];
 
+// FlatList sizing constants matching learn.tsx card dimensions + dashboard snapping behavior
+const SUBJECT_CARD_WIDTH = 140;
+const SUBJECT_CARD_MARGIN = 7.5;
+const SUBJECT_ITEM_SIZE = SUBJECT_CARD_WIDTH + (SUBJECT_CARD_MARGIN * 2);
+
+const CORE_SUBJECTS = [
+  'Effective Communication',
+  'General Mathematics',
+  'General Science',
+  'Life and Career Skills',
+  'Pag-aaral ng Kasaysayan at Lipunang Pilipino',
+];
+
+const getStrandSubjectName = (strand?: string | null) => {
+  const s = (strand || '').trim();
+  if (!s || s.toLowerCase() === 'explorer') {
+    return 'Strand-Based Specialized Subject';
+  }
+  const upper = s.toUpperCase();
+  if (upper === 'CBF' || /cook|food|bak|culinary|beverage/i.test(s)) {
+    return 'Cookery, Bakery & Food and Beverages';
+  }
+  if (upper === 'ICT' || /computer|digital|it|tech/i.test(s)) {
+    return 'Information and Communications Technology (ICT)';
+  }
+  if (upper === 'STEM') return 'STEM Specialized Subject';
+  if (upper === 'ABM') return 'ABM Specialized Subject';
+  if (upper === 'HUMSS') return 'HUMSS Specialized Subject';
+  if (upper === 'GAS') return 'GAS Specialized Subject';
+  if (upper === 'TVL') return 'TVL Specialized Subject';
+  return s;
+};
+
 const getSubjectKey = (title: string) =>
   (title || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -41,6 +74,22 @@ const getSubjectIcon = (name: string) => {
   if (/stem|engineer|calculus|robotics/.test(n)) return 'construct';
   if (/humss|humanities|politics|creative/.test(n)) return 'library';
   return FALLBACK_ICONS[hashString(n) % FALLBACK_ICONS.length];
+};
+
+const buildDefaultSubjects = (strandName?: string | null): SubjectGroup[] => {
+  const strandSubject = getStrandSubjectName(strandName);
+  const allNames = [...CORE_SUBJECTS, strandSubject];
+  return allNames.map((name, idx) => {
+    const key = getSubjectKey(name);
+    return {
+      id: key,
+      name,
+      icon: getSubjectIcon(name),
+      color: SUBJECT_COLORS[idx % SUBJECT_COLORS.length],
+      modules: [],
+      weeks: [],
+    };
+  });
 };
 
 interface WeekModuleItem {
@@ -76,7 +125,7 @@ export default function LearnScreen() {
   const [recommendation, setRecommendation] = useState<{ target_module: string; rationale: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [subjects, setSubjects] = useState<SubjectGroup[]>([]);
+  const [subjects, setSubjects] = useState<SubjectGroup[]>(() => buildDefaultSubjects());
   const [quizGrades, setQuizGrades] = useState<QuizGradeRecord[]>([]);
 
   // --- Offline Pack States ---
@@ -87,6 +136,14 @@ export default function LearnScreen() {
   const [downloadedPacks, setDownloadedPacks] = useState<Record<string, DownloadedStudyPack>>({});
   const [activePackId, setActivePackId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Infinite looping data array like dashboard.tsx
+  const infiniteSubjects = subjects.length > 0
+    ? Array(100)
+        .fill(subjects)
+        .flat()
+        .map((subj, index) => ({ ...subj, uniqueId: `subj-${index}` }))
+    : [];
 
   useEffect(() => {
     fetchAIRecommendation();
@@ -123,6 +180,28 @@ export default function LearnScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
+      let userStrand = '';
+      if (user) {
+        const { data: profile } = await supabase
+          .from('students')
+          .select('strand')
+          .eq('id', user.id)
+          .single();
+        if (profile?.strand) {
+          userStrand = profile.strand;
+        }
+      }
+
+      const strandSubjectTitle = getStrandSubjectName(userStrand);
+      const strandSubjectKey = getSubjectKey(strandSubjectTitle);
+
+      // Seed the 5 core subjects + 1 strand-dependent subject (even if empty)
+      const baseSubjects = buildDefaultSubjects(userStrand);
+      const grouped = new Map<string, SubjectGroup>();
+      baseSubjects.forEach((subj) => {
+        grouped.set(subj.id, { ...subj, modules: [], weeks: [] });
+      });
+
       const { data, error } = await supabase
         .from('ai_lessons')
         .select('id, title, subtitle, parsed_content, created_at')
@@ -130,11 +209,14 @@ export default function LearnScreen() {
       if (error) throw error;
 
       if (data) {
-        const grouped = new Map<string, SubjectGroup>();
-
         data.forEach((row: any) => {
-          const name = (row.title || '').trim() || 'Untitled Subject';
-          const key = getSubjectKey(name);
+          const rawName = (row.title || '').trim() || 'Untitled Subject';
+          let key = getSubjectKey(rawName);
+
+          // Route generic strand placeholder modules to the student's actual strand subject card
+          if (key === getSubjectKey('Strand-Based Specialized Subject')) {
+            key = strandSubjectKey;
+          }
 
           const lessonTitles: string[] =
             row.parsed_content && Array.isArray(row.parsed_content.lessons)
@@ -147,7 +229,7 @@ export default function LearnScreen() {
             row.parsed_content?.module_title ||
             row.subtitle ||
             lessonTitles[0] ||
-            name;
+            rawName;
 
           const existing = grouped.get(key);
           if (existing) {
@@ -161,32 +243,47 @@ export default function LearnScreen() {
               moduleTitle: modTitle,
             });
           } else {
-            grouped.set(key, {
-              id: key,
-              name,
-              icon: getSubjectIcon(name),
-              color: SUBJECT_COLORS[hashString(key) % SUBJECT_COLORS.length],
-              modules: [...lessonTitles],
-              weeks: [
-                {
-                  id: String(row.id),
-                  weekLabel: 'Week 1',
-                  moduleTitle: modTitle,
-                },
-              ],
-            });
+            // If an uploaded module doesn't match the 5 core subjects, attach it to the 6th strand subject if it's currently empty
+            const strandEntry = grouped.get(strandSubjectKey);
+            if (strandEntry && strandEntry.weeks.length === 0 && userStrand === '') {
+              strandEntry.name = rawName;
+              strandEntry.icon = getSubjectIcon(rawName);
+              lessonTitles.forEach((t) => {
+                if (!strandEntry.modules.includes(t)) strandEntry.modules.push(t);
+              });
+              strandEntry.weeks.push({
+                id: String(row.id),
+                weekLabel: 'Week 1',
+                moduleTitle: modTitle,
+              });
+            } else {
+              grouped.set(key, {
+                id: key,
+                name: rawName,
+                icon: getSubjectIcon(rawName),
+                color: SUBJECT_COLORS[grouped.size % SUBJECT_COLORS.length],
+                modules: [...lessonTitles],
+                weeks: [
+                  {
+                    id: String(row.id),
+                    weekLabel: 'Week 1',
+                    moduleTitle: modTitle,
+                  },
+                ],
+              });
+            }
           }
         });
+      }
 
-        const dynamicSubjects = Array.from(grouped.values()).map((subject) => ({
-          ...subject,
-          modules: subject.modules.length > 0 ? subject.modules : [subject.name],
-        }));
+      const dynamicSubjects = Array.from(grouped.values()).map((subject) => ({
+        ...subject,
+        modules: subject.modules.length > 0 ? subject.modules : [subject.name],
+      }));
 
-        setSubjects(dynamicSubjects);
-        if (dynamicSubjects.length > 0 && !expandedGradeSubjectId) {
-          setExpandedGradeSubjectId(dynamicSubjects[0].id);
-        }
+      setSubjects(dynamicSubjects);
+      if (dynamicSubjects.length > 0 && !expandedGradeSubjectId) {
+        setExpandedGradeSubjectId(dynamicSubjects[0].id);
       }
 
       if (user) {
@@ -352,32 +449,57 @@ export default function LearnScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Subjects */}
+          {/* Subjects (FlatList Carousel like dashboard.tsx to prevent tab-swipe conflict) */}
           <View style={styles.sectionContainer}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Subjects</Text>
             </View>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-              {subjects.map((subject) => (
+            <FlatList
+              horizontal={true}
+              nestedScrollEnabled={true}
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={SUBJECT_ITEM_SIZE}
+              snapToAlignment="center"
+              decelerationRate="fast"
+              disableIntervalMomentum={true}
+              contentContainerStyle={styles.horizontalScroll}
+              data={infiniteSubjects}
+              keyExtractor={(item) => item.uniqueId}
+              initialScrollIndex={subjects.length * 50}
+              getItemLayout={(_, index) => ({
+                length: SUBJECT_ITEM_SIZE,
+                offset: SUBJECT_ITEM_SIZE * index,
+                index,
+              })}
+              renderItem={({ item: subject }) => (
                 <TouchableOpacity
-                  key={subject.id}
-                  style={[styles.subjectCardWide, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}
+                  style={[
+                    styles.subjectCardWide,
+                    {
+                      width: SUBJECT_CARD_WIDTH,
+                      marginHorizontal: SUBJECT_CARD_MARGIN,
+                      backgroundColor: theme.cardBg,
+                      borderColor: theme.borderColor,
+                    },
+                  ]}
                   activeOpacity={0.8}
                   onPress={() => {
                     router.push({
                       pathname: '/lesson',
-                      params: { subject: subject.name }
+                      params: { subject: subject.name },
                     });
                   }}
                 >
                   <View style={[styles.largeIconContainer, { backgroundColor: subject.color + '15' }]}>
                     <Ionicons name={subject.icon as any} size={40} color={subject.color} />
                   </View>
-                  <Text style={[styles.subjectCardTitle, { color: theme.textPrimary }]} numberOfLines={2}>{subject.name}</Text>
+                  <Text style={[styles.subjectCardTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                    {subject.name}
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              )}
+            />
           </View>
 
           {/* Quiz Grades (Per Subject & Week) */}
@@ -415,7 +537,9 @@ export default function LearnScreen() {
                         <View style={{ flex: 1, paddingRight: 10 }}>
                           <Text style={[styles.cardTitle, { color: theme.textPrimary, marginBottom: 2 }]}>{subject.name}</Text>
                           <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
-                            {completedCount} of {subject.weeks.length} {subject.weeks.length === 1 ? 'Week' : 'Weeks'} Graded
+                            {subject.weeks.length === 0
+                              ? 'No modules yet'
+                              : `${completedCount} of ${subject.weeks.length} ${subject.weeks.length === 1 ? 'Week' : 'Weeks'} Graded`}
                           </Text>
                         </View>
                         <Ionicons
@@ -427,44 +551,52 @@ export default function LearnScreen() {
 
                       {isExpanded && (
                         <View style={[styles.weeksGradeList, { borderTopColor: theme.divider }]}>
-                          {subject.weeks.map((week) => {
-                            const grade = findGradeForWeek(subject.name, week.moduleTitle, subject.weeks.length === 1);
-                            const passed = grade ? grade.score >= grade.total_items / 2 : false;
+                          {subject.weeks.length === 0 ? (
+                            <View style={{ paddingVertical: 14 }}>
+                              <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
+                                No modules uploaded for this subject yet.
+                              </Text>
+                            </View>
+                          ) : (
+                            subject.weeks.map((week) => {
+                              const grade = findGradeForWeek(subject.name, week.moduleTitle, subject.weeks.length === 1);
+                              const passed = grade ? grade.score >= grade.total_items / 2 : false;
 
-                            return (
-                              <View key={week.id} style={[styles.weekGradeRow, { borderBottomColor: theme.divider }]}>
-                                <View style={{ flex: 1, paddingRight: 12 }}>
-                                  <Text style={[styles.weekBadgeLabel, { color: subject.color }]}>{week.weekLabel}</Text>
-                                  <Text style={[styles.weekModuleTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                                    {week.moduleTitle}
-                                  </Text>
-                                </View>
-
-                                {grade ? (
-                                  <View
-                                    style={[
-                                      styles.scorePill,
-                                      { backgroundColor: passed ? '#10B98118' : '#EF444418' }
-                                    ]}
-                                  >
-                                    <Ionicons
-                                      name={passed ? 'checkmark-circle' : 'alert-circle'}
-                                      size={15}
-                                      color={passed ? '#10B981' : '#EF4444'}
-                                      style={{ marginRight: 4 }}
-                                    />
-                                    <Text style={[styles.scorePillText, { color: passed ? '#10B981' : '#EF4444' }]}>
-                                      {grade.score} / {grade.total_items}
+                              return (
+                                <View key={week.id} style={[styles.weekGradeRow, { borderBottomColor: theme.divider }]}>
+                                  <View style={{ flex: 1, paddingRight: 12 }}>
+                                    <Text style={[styles.weekBadgeLabel, { color: subject.color }]}>{week.weekLabel}</Text>
+                                    <Text style={[styles.weekModuleTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                                      {week.moduleTitle}
                                     </Text>
                                   </View>
-                                ) : (
-                                  <View style={[styles.pendingPill, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}>
-                                    <Text style={[styles.pendingPillText, { color: theme.textSecondary }]}>Pending</Text>
-                                  </View>
-                                )}
-                              </View>
-                            );
-                          })}
+
+                                  {grade ? (
+                                    <View
+                                      style={[
+                                        styles.scorePill,
+                                        { backgroundColor: passed ? '#10B98118' : '#EF444418' }
+                                      ]}
+                                    >
+                                      <Ionicons
+                                        name={passed ? 'checkmark-circle' : 'alert-circle'}
+                                        size={15}
+                                        color={passed ? '#10B981' : '#EF4444'}
+                                        style={{ marginRight: 4 }}
+                                      />
+                                      <Text style={[styles.scorePillText, { color: passed ? '#10B981' : '#EF4444' }]}>
+                                        {grade.score} / {grade.total_items}
+                                      </Text>
+                                    </View>
+                                  ) : (
+                                    <View style={[styles.pendingPill, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}>
+                                      <Text style={[styles.pendingPillText, { color: theme.textSecondary }]}>Pending</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              );
+                            })
+                          )}
                         </View>
                       )}
                     </View>
@@ -671,7 +803,7 @@ const styles = StyleSheet.create({
   sectionSubtitlePad: { fontSize: 13, paddingHorizontal: 20, marginTop: 4, marginBottom: 15, lineHeight: 18 },
   sectionSubtitleWhite: { fontSize: 13, color: '#e0e8f9', paddingHorizontal: 20, marginBottom: 10, marginTop: -35, zIndex: 10 },
 
-  horizontalScroll: { gap: 15, paddingHorizontal: 20 },
+  horizontalScroll: { alignItems: 'center', paddingHorizontal: 12.5 },
 
   aiCardContainer: { marginBottom: 30 },
   aiCard: { marginHorizontal: 20, borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 6, zIndex: 20, marginTop: 20 },
@@ -682,7 +814,7 @@ const styles = StyleSheet.create({
 
   subjectCardWide: { width: 140, borderRadius: 16, padding: 12, borderWidth: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
   largeIconContainer: { width: '100%', height: 90, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  subjectCardTitle: { fontSize: 14, fontWeight: 'bold', lineHeight: 20, textAlign: 'center' },
+  subjectCardTitle: { fontSize: 14, fontWeight: 'bold', lineHeight: 20, textAlign: 'center', minHeight: 40 },
 
   gradesListContainer: { paddingHorizontal: 20, gap: 12 },
   emptyGradeBox: { padding: 20, borderRadius: 16, borderWidth: 1, alignItems: 'center' },

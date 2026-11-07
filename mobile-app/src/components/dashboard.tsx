@@ -12,6 +12,48 @@ const CARD_WIDTH = Math.round(width * 0.85);
 const CARD_MARGIN = 8;
 const ITEM_SIZE = CARD_WIDTH + (CARD_MARGIN * 2);
 
+const CORE_SUBJECTS = [
+  'Effective Communication',
+  'General Mathematics',
+  'General Science',
+  'Life and Career Skills',
+  'Pag-aaral ng Kasaysayan at Lipunang Pilipino',
+];
+
+const getStrandSubjectName = (strand?: string | null) => {
+  const s = (strand || '').trim();
+  if (!s || s.toLowerCase() === 'explorer') {
+    return 'Strand-Based Specialized Subject';
+  }
+  const upper = s.toUpperCase();
+  if (upper === 'CBF' || /cook|food|bak|culinary|beverage/i.test(s)) {
+    return 'Cookery, Bakery & Food and Beverages';
+  }
+  if (upper === 'ICT' || /computer|digital|it|tech/i.test(s)) {
+    return 'Information and Communications Technology (ICT)';
+  }
+  if (upper === 'STEM') return 'STEM Specialized Subject';
+  if (upper === 'ABM') return 'ABM Specialized Subject';
+  if (upper === 'HUMSS') return 'HUMSS Specialized Subject';
+  if (upper === 'GAS') return 'GAS Specialized Subject';
+  if (upper === 'TVL') return 'TVL Specialized Subject';
+  return s;
+};
+
+const getSubjectKey = (title: string) =>
+  (title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+const buildDefaultSubjects = (strandName?: string | null) => {
+  const strandSubject = getStrandSubjectName(strandName);
+  const allNames = [...CORE_SUBJECTS, strandSubject];
+  return allNames.map((title, idx) => ({
+    id: idx + 1,
+    title,
+    subtitle: 'No modules yet',
+    progress: 0,
+  }));
+};
+
 const ProgressCircle = ({ progress }: { progress: number }) => {
   const size = 70;
   const strokeWidth = 6;
@@ -31,25 +73,22 @@ const ProgressCircle = ({ progress }: { progress: number }) => {
   );
 };
 
-const defaultSubjects = [
-  { id: 1, title: 'Cookery & Food Safety', subtitle: 'No modules yet', progress: 0 },
-  { id: 2, title: 'Oral Communication', subtitle: 'No modules yet', progress: 0 },
-  { id: 3, title: 'General Mathematics', subtitle: 'No modules yet', progress: 0 },
-];
-
 export default function DashboardScreen() {
   const { theme } = useAppTheme();
   const [firstName, setFirstName] = useState('');
   const [strand, setStrand] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [learningModules, setLearningModules] = useState(defaultSubjects);
+  const [learningModules, setLearningModules] = useState(() => buildDefaultSubjects());
   const [xp, setXp] = useState(0);
   const [streak, setStreak] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [isChallengeDone, setIsChallengeDone] = useState(false);
   const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
 
-  const infiniteModules = Array(100).fill(learningModules).flat().map((module, index) => ({ ...module, uniqueId: `card-${index}` }));
+  const infiniteModules = Array(100)
+    .fill(learningModules)
+    .flat()
+    .map((module, index) => ({ ...module, uniqueId: `card-${index}` }));
 
   const getSecondsUntilPHTMidnight = () => {
     const now = new Date();
@@ -86,6 +125,7 @@ export default function DashboardScreen() {
     useCallback(() => {
       const fetchDashboardData = async () => {
         try {
+          let userStrand = '';
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
             const { data: profile } = await supabase
@@ -95,6 +135,7 @@ export default function DashboardScreen() {
               .single();
 
             if (profile) {
+              userStrand = profile.strand || '';
               setFirstName(profile.first_name);
               setStrand(profile.strand || 'Explorer');
               setXp(profile.xp || 0);
@@ -116,13 +157,31 @@ export default function DashboardScreen() {
             if (notifsData) setRecentNotifications(notifsData);
           }
 
-          const { data: lessonsData } = await supabase.from('ai_lessons').select('title, subtitle, progress').order('created_at', { ascending: false });
+          const baseSubjects = buildDefaultSubjects(userStrand);
+          const strandSubjectKey = getSubjectKey(getStrandSubjectName(userStrand));
+
+          const { data: lessonsData } = await supabase
+            .from('ai_lessons')
+            .select('title, subtitle, progress')
+            .order('created_at', { ascending: false });
+
           if (lessonsData) {
-            const mergedModules = defaultSubjects.map(subj => {
-              const dbMatch = lessonsData.find(l => l.title === subj.title);
-              return dbMatch ? { ...subj, subtitle: dbMatch.subtitle || 'Current Module', progress: dbMatch.progress || 0 } : subj;
+            const mergedModules = baseSubjects.map(subj => {
+              const subjKey = getSubjectKey(subj.title);
+              const dbMatch = lessonsData.find(l => {
+                const lKey = getSubjectKey(l.title);
+                if (subjKey === strandSubjectKey && lKey === getSubjectKey('Strand-Based Specialized Subject')) {
+                  return true;
+                }
+                return lKey === subjKey;
+              });
+              return dbMatch
+                ? { ...subj, subtitle: dbMatch.subtitle || 'Current Module', progress: dbMatch.progress || 0 }
+                : subj;
             });
             setLearningModules(mergedModules);
+          } else {
+            setLearningModules(baseSubjects);
           }
         } catch (error) {
           console.error(error);
