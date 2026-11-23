@@ -20,7 +20,6 @@ import { supabase } from '../lib/supabase';
 // Fill in the assigned coordinator names here once available
 const STRAND_COORDINATORS: Record<string, string> = {
   HUMSS: '',
-  HUMMS: '', // Keeping both spellings just in case existing signups used HUMMS
   CBF: '',
 };
 
@@ -46,12 +45,10 @@ export default function ProfileScreen() {
     address: '',
   });
 
-  // --- Edit Details Modal State ---
+  // --- Edit Details Modal State (LRN & Strand are locked) ---
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
-  const [editLrn, setEditLrn] = useState('');
-  const [editStrand, setEditStrand] = useState('');
   const [editGradeLevel, setEditGradeLevel] = useState('');
   const [editContact, setEditContact] = useState('');
   const [editAddress, setEditAddress] = useState('');
@@ -65,8 +62,9 @@ export default function ProfileScreen() {
 
   const fetchProfileData = async () => {
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) return;
 
       const { data, error } = await supabase
         .from('students')
@@ -94,12 +92,9 @@ export default function ProfileScreen() {
 
         setUserData(loadedData);
 
-        // Automatically open the form if this is a first-time login
         if (isOnboarding || !data.profile_completed) {
           setEditFirstName(loadedData.firstName);
           setEditLastName(loadedData.lastName);
-          setEditLrn(loadedData.lrn);
-          setEditStrand(loadedData.strand);
           setEditGradeLevel(loadedData.gradeLevel);
           setEditContact(loadedData.contactNumber);
           setEditAddress(loadedData.address);
@@ -120,8 +115,6 @@ export default function ProfileScreen() {
   const openEditModal = () => {
     setEditFirstName(userData.firstName);
     setEditLastName(userData.lastName);
-    setEditLrn(userData.lrn);
-    setEditStrand(userData.strand);
     setEditGradeLevel(userData.gradeLevel);
     setEditContact(userData.contactNumber);
     setEditAddress(userData.address);
@@ -142,17 +135,13 @@ export default function ProfileScreen() {
 
     try {
       setIsSavingDetails(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
-
-      const assignedCoordinator = getCoordinatorByStrand(editStrand);
 
       const updates = {
         first_name: editFirstName.trim(),
         last_name: editLastName.trim(),
-        lrn_number: editLrn.trim() || null,
-        strand: editStrand.trim() || null,
-        als_coordinator: assignedCoordinator || null,
         grade_level: editGradeLevel.trim(),
         contact_number: editContact.trim(),
         address: editAddress.trim(),
@@ -170,9 +159,6 @@ export default function ProfileScreen() {
         ...prev,
         firstName: updates.first_name,
         lastName: updates.last_name,
-        lrn: updates.lrn_number || '',
-        strand: updates.strand || '',
-        coordinator: assignedCoordinator,
         gradeLevel: updates.grade_level,
         contactNumber: updates.contact_number,
         address: updates.address,
@@ -376,23 +362,6 @@ export default function ProfileScreen() {
                   placeholder="Enter last name"
                 />
 
-                <Text style={styles.inputLabel}>LRN Number</Text>
-                <TextInput
-                  style={styles.inputField}
-                  value={editLrn}
-                  onChangeText={setEditLrn}
-                  placeholder="12-digit LRN (optional)"
-                  keyboardType="numeric"
-                />
-
-                <Text style={styles.inputLabel}>Current Strand</Text>
-                <TextInput
-                  style={styles.inputField}
-                  value={editStrand}
-                  onChangeText={setEditStrand}
-                  placeholder="e.g. HUMSS or CBF"
-                />
-
                 <Text style={styles.inputLabel}>Current Grade Level *</Text>
                 <TextInput
                   style={styles.inputField}
@@ -538,7 +507,6 @@ const styles = StyleSheet.create({
 
   divider: { height: 1, backgroundColor: '#eee', marginVertical: 12 },
 
-  // Modal styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 25, elevation: 10, maxHeight: '88%' },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 8, textAlign: 'center' },

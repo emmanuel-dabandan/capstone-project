@@ -14,6 +14,7 @@ const { width } = Dimensions.get('window');
 const CARD_WIDTH = Math.round(width * 0.85);
 const CARD_MARGIN = 8;
 const ITEM_SIZE = CARD_WIDTH + (CARD_MARGIN * 2);
+const SIDE_PADDING = Math.round((width - ITEM_SIZE) / 2);
 
 const CORE_SUBJECTS = [
   'Effective Communication',
@@ -29,17 +30,12 @@ const getStrandSubjectName = (strand?: string | null) => {
     return 'Strand-Based Specialized Subject';
   }
   const upper = s.toUpperCase();
-  if (upper === 'CBF' || /cook|food|bak|culinary|beverage/i.test(s)) {
-    return 'Cookery, Bakery & Food and Beverages';
+  if (upper === 'CBF' || /cook|food|bak|culinary|beverage|kitchen/i.test(s)) {
+    return 'Kitchen Operations';
   }
-  if (upper === 'ICT' || /computer|digital|it|tech/i.test(s)) {
-    return 'Information and Communications Technology (ICT)';
+  if (upper === 'HUMSS' || /humanities|assh/i.test(s)) {
+    return 'Arts, Social Sciences, and Humanities (ASSH)';
   }
-  if (upper === 'STEM') return 'STEM Specialized Subject';
-  if (upper === 'ABM') return 'ABM Specialized Subject';
-  if (upper === 'HUMSS') return 'HUMSS Specialized Subject';
-  if (upper === 'GAS') return 'GAS Specialized Subject';
-  if (upper === 'TVL') return 'TVL Specialized Subject';
   return s;
 };
 
@@ -131,7 +127,6 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       const fetchDashboardData = async () => {
-        // 1. Load cached data immediately so offline mode works seamlessly
         try {
           const cachedRaw = await AsyncStorage.getItem(DASHBOARD_CACHE_KEY);
           if (cachedRaw) {
@@ -150,7 +145,6 @@ export default function DashboardScreen() {
           console.error('Cache read error:', e);
         }
 
-        // 2. Try syncing fresh data from Supabase (silently falls back to cache if offline)
         try {
           let userStrand = '';
           let freshFirstName = firstName;
@@ -159,7 +153,6 @@ export default function DashboardScreen() {
           let freshChallengeDone = isChallengeDone;
           let freshNotifs = recentNotifications;
 
-          // Use getSession() instead of getUser() so it doesn't fail offline
           const { data: { session } } = await supabase.auth.getSession();
           const user = session?.user;
 
@@ -225,7 +218,6 @@ export default function DashboardScreen() {
             });
             setLearningModules(mergedModules);
 
-            // Save latest snapshot for offline use
             await AsyncStorage.setItem(
               DASHBOARD_CACHE_KEY,
               JSON.stringify({
@@ -310,10 +302,10 @@ export default function DashboardScreen() {
               nestedScrollEnabled={true}
               showsHorizontalScrollIndicator={false}
               snapToInterval={ITEM_SIZE}
-              snapToAlignment="center"
+              snapToAlignment="start"
               decelerationRate="fast"
               disableIntervalMomentum={true}
-              contentContainerStyle={styles.carouselContent}
+              contentContainerStyle={[styles.carouselContent, { paddingHorizontal: SIDE_PADDING }]}
               data={infiniteModules}
               keyExtractor={(item) => item.uniqueId}
               initialScrollIndex={learningModules.length * 50}

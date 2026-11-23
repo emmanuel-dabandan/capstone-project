@@ -29,7 +29,7 @@ export default function QuizScreen() {
   const { theme } = useAppTheme();
 
   const { subject, module } = useLocalSearchParams<{ subject: string; module?: string }>();
-  const subjectTitle = subject || 'Cookery & Food Safety';
+  const subjectTitle = subject || 'Kitchen Operations';
   const gradeTitle = module || subjectTitle;
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -86,7 +86,8 @@ export default function QuizScreen() {
     const timeoutId = setTimeout(() => controller.abort(), QUIZ_TIMEOUT_MS);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (user) {
         const { data: existingGrade } = await supabase
           .from('quiz_grades')
@@ -139,7 +140,8 @@ export default function QuizScreen() {
   const saveGrade = async (finalScore: number) => {
     setIsSubmitting(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not signed in');
 
       const { error: insertError } = await supabase
@@ -160,6 +162,13 @@ export default function QuizScreen() {
         }
         throw insertError;
       }
+
+      const percentage = Math.round((finalScore / questions.length) * 100);
+      await supabase.from('notifications').insert({
+        student_id: user.id,
+        message: `You passed the "${gradeTitle}" assessment with a score of ${finalScore}/${questions.length} (${percentage}%).`,
+        is_read: false,
+      });
 
       setQuizComplete(true);
     } catch (error) {
@@ -192,7 +201,6 @@ export default function QuizScreen() {
       if (percentage >= PASSING_PERCENTAGE) {
         saveGrade(newScore);
       } else {
-        // Below 75%: do not record grade so the student can retake
         setQuizComplete(true);
       }
     }

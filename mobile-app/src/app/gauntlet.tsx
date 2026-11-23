@@ -79,7 +79,8 @@ export default function GauntletScreen() {
     } else {
       setIsFinishing(true);
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
         if (user) {
           const { data: profile } = await supabase.from('students').select('xp').eq('id', user.id).single();
           const currentXp = profile?.xp || 0;
@@ -101,6 +102,12 @@ export default function GauntletScreen() {
           }
 
           await supabase.rpc('log_daily_xp', { p_student_id: user.id, p_xp: 150 });
+
+          await supabase.from('notifications').insert({
+            student_id: user.id,
+            message: 'Daily Challenge (Gauntlet) cleared! You earned +150 XP and kept your daily streak going.',
+            is_read: false,
+          });
         }
       } catch (error) {
         console.error("Error saving gauntlet progress:", error);

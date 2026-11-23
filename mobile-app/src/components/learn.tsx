@@ -19,7 +19,6 @@ import {
 const SUBJECT_COLORS = ['#5480e5', '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
 const FALLBACK_ICONS = ['bulb', 'earth', 'library', 'school', 'rocket', 'extension-puzzle'];
 
-// FlatList sizing constants matching learn.tsx card dimensions + dashboard snapping behavior
 const SUBJECT_CARD_WIDTH = 140;
 const SUBJECT_CARD_MARGIN = 7.5;
 const SUBJECT_ITEM_SIZE = SUBJECT_CARD_WIDTH + (SUBJECT_CARD_MARGIN * 2);
@@ -38,17 +37,12 @@ const getStrandSubjectName = (strand?: string | null) => {
     return 'Strand-Based Specialized Subject';
   }
   const upper = s.toUpperCase();
-  if (upper === 'CBF' || /cook|food|bak|culinary|beverage/i.test(s)) {
-    return 'Cookery, Bakery & Food and Beverages';
+  if (upper === 'CBF' || /cook|food|bak|culinary|beverage|kitchen/i.test(s)) {
+    return 'Kitchen Operations';
   }
-  if (upper === 'ICT' || /computer|digital|it|tech/i.test(s)) {
-    return 'Information and Communications Technology (ICT)';
+  if (upper === 'HUMSS' || /humanities|assh/i.test(s)) {
+    return 'Arts, Social Sciences, and Humanities (ASSH)';
   }
-  if (upper === 'STEM') return 'STEM Specialized Subject';
-  if (upper === 'ABM') return 'ABM Specialized Subject';
-  if (upper === 'HUMSS') return 'HUMSS Specialized Subject';
-  if (upper === 'GAS') return 'GAS Specialized Subject';
-  if (upper === 'TVL') return 'TVL Specialized Subject';
   return s;
 };
 
@@ -67,12 +61,9 @@ const getSubjectIcon = (name: string) => {
   if (/general\s*math|math|numer|algebra|geometry|arithmetic|stat|probab/.test(n)) return 'calculator';
   if (/general\s*science|science|biolog|chemi|physics|earth\s*science/.test(n)) return 'flask';
   if (/life\s*and\s*career|career|work|employ|entrepreneur|personal\s*develop/.test(n)) return 'briefcase';
-  if (/kasaysayan|lipunang\s*pilipino|araling\s*panlipunan|social|history|civic|govern|geograph|philippine/.test(n)) return 'earth';
+  if (/kasaysayan|lipunang\s*pilipino|araling\s*panlipunan|history|civic|govern|geograph|philippine/.test(n)) return 'earth';
   if (/cook|food|kitchen|culinary|bak(e|ing)|nutrition|cbf|beverage/.test(n)) return 'restaurant';
-  if (/digital|computer|ict|technolog|programming/.test(n)) return 'laptop';
-  if (/abm|account|business|finance|marketing/.test(n)) return 'stats-chart';
-  if (/stem|engineer|calculus|robotics/.test(n)) return 'construct';
-  if (/humss|humanities|politics|creative/.test(n)) return 'library';
+  if (/humss|humanities|assh|arts,\s*social\s*sciences/.test(n)) return 'library';
   return FALLBACK_ICONS[hashString(n) % FALLBACK_ICONS.length];
 };
 
@@ -137,7 +128,6 @@ export default function LearnScreen() {
   const [activePackId, setActivePackId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Infinite looping data array like dashboard.tsx
   const infiniteSubjects = subjects.length > 0
     ? Array(100)
         .fill(subjects)
@@ -158,7 +148,8 @@ export default function LearnScreen() {
 
   const fetchAIRecommendation = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const response = await fetch(`${API_BASE_URL}/api/ai-recommendation/${user.id}`);
@@ -178,7 +169,8 @@ export default function LearnScreen() {
 
   const fetchDatabaseModulesAndGrades = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
 
       let userStrand = '';
       if (user) {
@@ -195,7 +187,6 @@ export default function LearnScreen() {
       const strandSubjectTitle = getStrandSubjectName(userStrand);
       const strandSubjectKey = getSubjectKey(strandSubjectTitle);
 
-      // Seed the 5 core subjects + 1 strand-dependent subject (even if empty)
       const baseSubjects = buildDefaultSubjects(userStrand);
       const grouped = new Map<string, SubjectGroup>();
       baseSubjects.forEach((subj) => {
@@ -213,7 +204,6 @@ export default function LearnScreen() {
           const rawName = (row.title || '').trim() || 'Untitled Subject';
           let key = getSubjectKey(rawName);
 
-          // Route generic strand placeholder modules to the student's actual strand subject card
           if (key === getSubjectKey('Strand-Based Specialized Subject')) {
             key = strandSubjectKey;
           }
@@ -243,7 +233,6 @@ export default function LearnScreen() {
               moduleTitle: modTitle,
             });
           } else {
-            // If an uploaded module doesn't match the 5 core subjects, attach it to the 6th strand subject if it's currently empty
             const strandEntry = grouped.get(strandSubjectKey);
             if (strandEntry && strandEntry.weeks.length === 0 && userStrand === '') {
               strandEntry.name = rawName;
@@ -306,13 +295,11 @@ export default function LearnScreen() {
     const norm = (s: string) => (s || '').trim().toLowerCase();
     const compositeKey = `${norm(subjectName)} - ${norm(moduleTitle)}`;
 
-    // 1. Check exact module title or composite "Subject - Module" key
     const exactMatch = quizGrades.find(
       (g) => norm(g.module_title) === norm(moduleTitle) || norm(g.module_title) === compositeKey
     );
     if (exactMatch) return exactMatch;
 
-    // 2. Fallback to subject-level grade if recorded under the subject name
     if (isOnlyWeek || norm(moduleTitle) === norm(subjectName)) {
       return quizGrades.find((g) => norm(g.module_title) === norm(subjectName));
     }
@@ -449,7 +436,7 @@ export default function LearnScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Subjects (FlatList Carousel like dashboard.tsx to prevent tab-swipe conflict) */}
+          {/* Subjects Carousel */}
           <View style={styles.sectionContainer}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Subjects</Text>
@@ -560,7 +547,7 @@ export default function LearnScreen() {
                           ) : (
                             subject.weeks.map((week) => {
                               const grade = findGradeForWeek(subject.name, week.moduleTitle, subject.weeks.length === 1);
-                              const passed = grade ? grade.score >= grade.total_items / 2 : false;
+                              const passed = grade ? (grade.score / grade.total_items) * 100 >= 75 : false;
 
                               return (
                                 <View key={week.id} style={[styles.weekGradeRow, { borderBottomColor: theme.divider }]}>
