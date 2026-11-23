@@ -14,7 +14,6 @@ const { width } = Dimensions.get('window');
 const CARD_WIDTH = Math.round(width * 0.85);
 const CARD_MARGIN = 8;
 const ITEM_SIZE = CARD_WIDTH + (CARD_MARGIN * 2);
-const SIDE_PADDING = Math.round((width - ITEM_SIZE) / 2);
 
 const CORE_SUBJECTS = [
   'Effective Communication',
@@ -84,11 +83,6 @@ export default function DashboardScreen() {
   const [isChallengeDone, setIsChallengeDone] = useState(false);
   const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
 
-  const infiniteModules = Array(100)
-    .fill(learningModules)
-    .flat()
-    .map((module, index) => ({ ...module, uniqueId: `card-${index}` }));
-
   const getSecondsUntilPHTMidnight = () => {
     const now = new Date();
     const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -127,8 +121,12 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       const fetchDashboardData = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
+        const userCacheKey = user ? `${DASHBOARD_CACHE_KEY}_${user.id}` : DASHBOARD_CACHE_KEY;
+
         try {
-          const cachedRaw = await AsyncStorage.getItem(DASHBOARD_CACHE_KEY);
+          const cachedRaw = await AsyncStorage.getItem(userCacheKey);
           if (cachedRaw) {
             const cached = JSON.parse(cachedRaw);
             if (cached.firstName) setFirstName(cached.firstName);
@@ -152,9 +150,6 @@ export default function DashboardScreen() {
           let freshStreak = streak;
           let freshChallengeDone = isChallengeDone;
           let freshNotifs = recentNotifications;
-
-          const { data: { session } } = await supabase.auth.getSession();
-          const user = session?.user;
 
           if (user) {
             const { data: profile, error: profileError } = await supabase
@@ -199,7 +194,7 @@ export default function DashboardScreen() {
 
           const { data: lessonsData, error: lessonsError } = await supabase
             .from('ai_lessons')
-            .select('title, subtitle, progress')
+            .select('title, subtitle')
             .order('created_at', { ascending: false });
 
           if (!lessonsError && lessonsData) {
@@ -213,13 +208,13 @@ export default function DashboardScreen() {
                 return lKey === subjKey;
               });
               return dbMatch
-                ? { ...subj, subtitle: dbMatch.subtitle || 'Current Module', progress: dbMatch.progress || 0 }
+                ? { ...subj, subtitle: dbMatch.subtitle || 'Current Module' }
                 : subj;
             });
             setLearningModules(mergedModules);
 
             await AsyncStorage.setItem(
-              DASHBOARD_CACHE_KEY,
+              userCacheKey,
               JSON.stringify({
                 firstName: freshFirstName,
                 strand: userStrand || 'Explorer',
@@ -301,15 +296,15 @@ export default function DashboardScreen() {
               horizontal={true}
               nestedScrollEnabled={true}
               showsHorizontalScrollIndicator={false}
-              snapToInterval={ITEM_SIZE}
-              snapToAlignment="start"
+              snapToOffsets={learningModules.map((_, index) => index * ITEM_SIZE)}
               decelerationRate="fast"
               disableIntervalMomentum={true}
-              contentContainerStyle={[styles.carouselContent, { paddingHorizontal: SIDE_PADDING }]}
-              data={infiniteModules}
-              keyExtractor={(item) => item.uniqueId}
-              initialScrollIndex={learningModules.length * 50}
-              getItemLayout={(_, index) => ({ length: ITEM_SIZE, offset: ITEM_SIZE * index, index })}
+              contentContainerStyle={[
+                styles.carouselContent,
+                { paddingHorizontal: (width - ITEM_SIZE) / 2 },
+              ]}
+              data={learningModules}
+              keyExtractor={(item) => String(item.id)}
               renderItem={({ item: module }) => (
                 <View style={[styles.subjectCard, { width: CARD_WIDTH, marginHorizontal: CARD_MARGIN, backgroundColor: theme.isDark ? '#1e3a8a' : '#5480e5' }]}>
                   <View style={styles.cardContentRow}>

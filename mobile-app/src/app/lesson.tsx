@@ -56,72 +56,75 @@ export default function LessonScreen() {
   );
 
   const fetchModules = async () => {
-      const modulesCacheKey = `@learnify_modules_${subjectName}`;
-      const gradesCacheKey = `@learnify_quiz_grades`;
+    const modulesCacheKey = `@learnify_modules_${subjectName}`;
 
+    try {
+      setLoading(true);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+
+      const userProgressKey = user ? `${PROGRESS_STORAGE_KEY}_${user.id}` : PROGRESS_STORAGE_KEY;
+      const gradesCacheKey = user ? `@learnify_quiz_grades_${user.id}` : '@learnify_quiz_grades';
+
+      // 1. Load per-student local completed lesson counts + cached modules & grades
       try {
-        setLoading(true);
+        const [rawProgress, rawModules, rawGrades] = await Promise.all([
+          AsyncStorage.getItem(userProgressKey),
+          AsyncStorage.getItem(modulesCacheKey),
+          AsyncStorage.getItem(gradesCacheKey),
+        ]);
 
-        // 1. Load local completed lesson counts + cached modules & grades
-        try {
-          const [rawProgress, rawModules, rawGrades] = await Promise.all([
-            AsyncStorage.getItem(PROGRESS_STORAGE_KEY),
-            AsyncStorage.getItem(modulesCacheKey),
-            AsyncStorage.getItem(gradesCacheKey),
-          ]);
+        setLocalProgressMap(rawProgress ? JSON.parse(rawProgress) : {});
+        setQuizGrades(rawGrades ? JSON.parse(rawGrades) : []);
 
-          if (rawProgress) setLocalProgressMap(JSON.parse(rawProgress));
-          if (rawGrades) setQuizGrades(JSON.parse(rawGrades));
-          if (rawModules) {
-            const cachedMods: DBRow[] = JSON.parse(rawModules);
-            setModules(cachedMods);
-            if (moduleId && typeof moduleId === 'string') {
-              setExpandedModuleId(moduleId);
-            } else if (cachedMods.length > 0 && !expandedModuleId) {
-              setExpandedModuleId(cachedMods[0].id);
-            }
-          }
-        } catch (e) {
-          console.error('Error reading local cache:', e);
-        }
-
-        // 2. Sync fresh data from Supabase if online (uses getSession() instead of getUser())
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-
-        let query = supabase.from('ai_lessons').select('*').order('created_at', { ascending: true }).limit(12);
-        if (subjectName && subjectName !== 'Course Modules') {
-          query = query.eq('title', subjectName);
-        }
-        const { data, error } = await query;
-        if (!error && data) {
-          setModules(data);
-          await AsyncStorage.setItem(modulesCacheKey, JSON.stringify(data));
-
+        if (rawModules) {
+          const cachedMods: DBRow[] = JSON.parse(rawModules);
+          setModules(cachedMods);
           if (moduleId && typeof moduleId === 'string') {
             setExpandedModuleId(moduleId);
-          } else if (data.length > 0 && !expandedModuleId) {
-            setExpandedModuleId(data[0].id);
+          } else if (cachedMods.length > 0 && !expandedModuleId) {
+            setExpandedModuleId(cachedMods[0].id);
           }
         }
-
-        if (user) {
-          const { data: gradesData, error: gradesError } = await supabase
-            .from('quiz_grades')
-            .select('id, module_title, score, total_items')
-            .eq('student_id', user.id);
-
-          if (!gradesError && gradesData) {
-            setQuizGrades(gradesData);
-            await AsyncStorage.setItem(gradesCacheKey, JSON.stringify(gradesData));
-          }
-        }
-      } catch (error: any) {
-        console.log('Offline mode: using cached modules.');
-      } finally {
-        setLoading(false);
+      } catch (e) {
+        console.error('Error reading local cache:', e);
       }
-    };
+
+      // 2. Sync fresh data from Supabase if online
+      let query = supabase.from('ai_lessons').select('*').order('created_at', { ascending: true }).limit(12);
+      if (subjectName && subjectName !== 'Course Modules') {
+        query = query.eq('title', subjectName);
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        setModules(data);
+        await AsyncStorage.setItem(modulesCacheKey, JSON.stringify(data));
+
+        if (moduleId && typeof moduleId === 'string') {
+          setExpandedModuleId(moduleId);
+        } else if (data.length > 0 && !expandedModuleId) {
+          setExpandedModuleId(data[0].id);
+        }
+      }
+
+      if (user) {
+        const { data: gradesData, error: gradesError } = await supabase
+          .from('quiz_grades')
+          .select('id, module_title, score, total_items')
+          .eq('student_id', user.id);
+
+        if (!gradesError && gradesData) {
+          setQuizGrades(gradesData);
+          await AsyncStorage.setItem(gradesCacheKey, JSON.stringify(gradesData));
+        }
+      }
+    } catch (error: any) {
+      console.log('Offline mode: using cached modules.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const findModuleGrade = (subjTitle: string, modTitle: string, isSingleModule: boolean): QuizGradeRecord | undefined => {
     const norm = (s: string) => (s || '').trim().toLowerCase();
@@ -198,8 +201,6 @@ export default function LessonScreen() {
               const moduleSubtitle = parsed?.module_subtitle || 'Structured learning module';
               const estTime = parsed?.total_estimated_time || 0;
 
-              const totalLessons = lessons.length || 1;
-              const dbCompleted = Math.round(((mod.progress || 0) / 100) * totalLessons);
               const localCompleted =
                 localProgressMap[String(mod.id)] ||
                 localProgressMap[mod.title || subjectName] ||
@@ -209,7 +210,7 @@ export default function LessonScreen() {
                   ? parseInt(String(unlockedCount), 10) || 0
                   : 0;
 
-              const completedLessons = Math.max(dbCompleted, localCompleted, paramCompleted);
+              const completedLessons = Math.max(localCompleted, paramCompleted);
 
               const allLessonsDone = lessons.length > 0 && completedLessons >= lessons.length;
               const recordedGrade = findModuleGrade(mod.title || subjectName, moduleTitle, modules.length === 1);

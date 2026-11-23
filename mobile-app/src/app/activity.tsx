@@ -107,7 +107,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
     }
   }
 
-  // 2. MATCHING (Full sentences, no cutting off with '...')
+  // 2. MATCHING
   if (chosenType === 'matching' && (Array.isArray(lesson?.key_concepts) || sentences.length >= 3)) {
     const pairs: { term: string; definition: string }[] = [];
 
@@ -116,7 +116,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
         const firstSent = splitSentences(kc.concept_body)[0] || kc.concept_body;
         pairs.push({
           term: kc.concept_title || `Concept ${i + 1}`,
-          definition: firstSent, // Full text, no truncation
+          definition: firstSent,
         });
       });
     } else {
@@ -124,7 +124,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
       usableSentences.forEach((sent, idx) => {
         const sentTerms = extractKeyTerms(sent);
         const keyTerm = sentTerms[0] ? sentTerms[0].charAt(0).toUpperCase() + sentTerms[0].slice(1) : `Point ${idx + 1}`;
-        pairs.push({ term: keyTerm, definition: sent }); // Full text, no truncation
+        pairs.push({ term: keyTerm, definition: sent });
       });
     }
 
@@ -165,13 +165,13 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
     };
   }
 
-  // 5. MULTIPLE CHOICE (Full sentence, no truncating with '...')
+  // 5. MULTIPLE CHOICE
   if (sentences.length > 0) {
     const correctSent = sentences[Math.min(1, sentences.length - 1)] || sentences[0];
     const keyTopic = terms[0] || title;
 
     const options = [
-      correctSent, // Full sentence
+      correctSent,
       `It completely eliminates the need to evaluate ${keyTopic.toLowerCase()} in any scenario.`,
       `It states that ${keyTopic.toLowerCase()} remains fixed regardless of the data or context.`,
       `It only applies when no measurements or observations are recorded.`,
@@ -197,7 +197,7 @@ function buildVariedActivityFromLesson(lesson: any, lessonIdx: number) {
 
 export default function ActivityScreen() {
   const { theme } = useAppTheme();
-  const { lessonData, subject, moduleId, lessonIndex, totalLessons } = useLocalSearchParams();
+  const { lessonData, subject, moduleId, lessonIndex } = useLocalSearchParams();
   const [lesson, setLesson] = useState<any>(null);
   const [activity, setActivity] = useState<any>(null);
   const [subjectName, setSubjectName] = useState<string>((subject as string) || '');
@@ -291,49 +291,21 @@ export default function ActivityScreen() {
   const recordLessonCompletion = async () => {
     setIsSavingProgress(true);
     const completedCount = lessonIdxNum + 1;
-    const totalCount = Math.max(1, parseInt((totalLessons as string) || '5', 10));
-    const targetProgress = Math.min(100, Math.round((completedCount / totalCount) * 100));
 
     try {
-      const raw = await AsyncStorage.getItem(PROGRESS_STORAGE_KEY);
-      const map: Record<string, number> = raw ? JSON.parse(raw) : {};
-      const key = String(moduleId || subject || subjectName || 'default');
-      map[key] = Math.max(map[key] || 0, completedCount);
-      await AsyncStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(map));
-    } catch (e) {
-      console.error('Local progress save error:', e);
-    }
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      const userProgressKey = user ? `${PROGRESS_STORAGE_KEY}_${user.id}` : PROGRESS_STORAGE_KEY;
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (moduleId) {
-        const { data: modRow } = await supabase
-          .from('ai_lessons')
-          .select('id, progress, title')
-          .eq('id', moduleId)
-          .maybeSingle();
-
-        if (modRow) {
-          if (modRow.title) setSubjectName(modRow.title);
-          const newProgress = Math.max(modRow.progress || 0, targetProgress);
-          await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', modRow.id);
-        }
-      } else {
-        const { data: allModules } = await supabase
-          .from('ai_lessons')
-          .select('id, progress, parsed_content, title');
-
-        const currentTitle = lesson?.lesson_title || lesson?.title;
-        const parentMod = allModules?.find((m: any) =>
-          m.parsed_content?.lessons?.some((l: any) => (l.lesson_title || l.title) === currentTitle)
-        );
-
-        if (parentMod) {
-          if (parentMod.title) setSubjectName(parentMod.title);
-          const newProgress = Math.max(parentMod.progress || 0, targetProgress);
-          await supabase.from('ai_lessons').update({ progress: newProgress }).eq('id', parentMod.id);
-        }
+      // Save per-student local progress (never overwrite the shared ai_lessons table)
+      try {
+        const raw = await AsyncStorage.getItem(userProgressKey);
+        const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+        const key = String(moduleId || subject || subjectName || 'default');
+        map[key] = Math.max(map[key] || 0, completedCount);
+        await AsyncStorage.setItem(userProgressKey, JSON.stringify(map));
+      } catch (e) {
+        console.error('Local progress save error:', e);
       }
 
       if (user) {
@@ -347,7 +319,7 @@ export default function ActivityScreen() {
         }
       }
     } catch (err) {
-      console.error('Supabase Progress Update Failed:', err);
+      console.error('Progress Save Failed:', err);
     } finally {
       setIsSavingProgress(false);
     }
@@ -713,7 +685,7 @@ const styles = StyleSheet.create({
   optionCardSelected: { borderColor: '#2e64e5', backgroundColor: '#f0f4ff' },
   optionCardCorrect: { borderColor: '#4caf50', backgroundColor: '#e8f5e9' },
   optionCardWrong: { borderColor: '#f44336', backgroundColor: '#ffebee' },
-  optionText: { fontSize: 15, fontWeight: '500', lineHeight: 22 }, // Allows natural wrapping
+  optionText: { fontSize: 15, fontWeight: '500', lineHeight: 22 },
   optionTextSelected: { color: '#2e64e5', fontWeight: 'bold' },
   optionTextCorrect: { color: '#155724', fontWeight: 'bold' },
   inputContainer: { width: '100%' },
