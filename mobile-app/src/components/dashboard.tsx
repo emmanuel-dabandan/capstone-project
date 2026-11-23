@@ -2,10 +2,13 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
-import { useAppTheme } from '../lib/ThemeContext'; // THEME HOOK
+import { useAppTheme } from '../lib/ThemeContext';
+
+const DASHBOARD_CACHE_KEY = '@learnify_dashboard_cache_v1';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = Math.round(width * 0.85);
@@ -118,54 +121,95 @@ export default function DashboardScreen() {
   const markAsRead = async (id: string, isRead: boolean) => {
     if (isRead) return;
     setRecentNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    try {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    } catch {
+      // Ignore network error when offline
+    }
   };
 
   useFocusEffect(
     useCallback(() => {
       const fetchDashboardData = async () => {
+        // 1. Load cached data immediately so offline mode works seamlessly
+        try {
+          const cachedRaw = await AsyncStorage.getItem(DASHBOARD_CACHE_KEY);
+          if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw);
+            if (cached.firstName) setFirstName(cached.firstName);
+            if (cached.strand) setStrand(cached.strand);
+            if (typeof cached.xp === 'number') setXp(cached.xp);
+            if (typeof cached.streak === 'number') setStreak(cached.streak);
+            if (typeof cached.isChallengeDone === 'boolean') setIsChallengeDone(cached.isChallengeDone);
+            if (Array.isArray(cached.recentNotifications)) setRecentNotifications(cached.recentNotifications);
+            if (Array.isArray(cached.learningModules) && cached.learningModules.length > 0) {
+              setLearningModules(cached.learningModules);
+            }
+          }
+        } catch (e) {
+          console.error('Cache read error:', e);
+        }
+
+        // 2. Try syncing fresh data from Supabase (silently falls back to cache if offline)
         try {
           let userStrand = '';
-          const { data: { user } } = await supabase.auth.getUser();
+          let freshFirstName = firstName;
+          let freshXp = xp;
+          let freshStreak = streak;
+          let freshChallengeDone = isChallengeDone;
+          let freshNotifs = recentNotifications;
+
+          // Use getSession() instead of getUser() so it doesn't fail offline
+          const { data: { session } } = await supabase.auth.getSession();
+          const user = session?.user;
+
           if (user) {
-            const { data: profile } = await supabase
+            const { data: profile, error: profileError } = await supabase
               .from('students')
               .select('first_name, strand, xp, streak, last_challenge_date')
               .eq('id', user.id)
               .single();
 
-            if (profile) {
+            if (!profileError && profile) {
               userStrand = profile.strand || '';
-              setFirstName(profile.first_name);
-              setStrand(profile.strand || 'Explorer');
-              setXp(profile.xp || 0);
-              setStreak(profile.streak || 0);
+              freshFirstName = profile.first_name || '';
+              freshXp = profile.xp || 0;
+              freshStreak = profile.streak || 0;
+
+              setFirstName(freshFirstName);
+              setStrand(userStrand || 'Explorer');
+              setXp(freshXp);
+              setStreak(freshStreak);
 
               const todayPHT = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
-              setIsChallengeDone(profile.last_challenge_date === todayPHT);
+              freshChallengeDone = profile.last_challenge_date === todayPHT;
+              setIsChallengeDone(freshChallengeDone);
 
-              await supabase.from('students').update({ last_active_date: todayPHT }).eq('id', user.id);
+              supabase.from('students').update({ last_active_date: todayPHT }).eq('id', user.id).then(() => {});
             }
 
-            const { data: notifsData } = await supabase
+            const { data: notifsData, error: notifsError } = await supabase
               .from('notifications')
               .select('*')
               .eq('student_id', user.id)
               .order('created_at', { ascending: false })
               .limit(3);
 
-            if (notifsData) setRecentNotifications(notifsData);
+            if (!notifsError && notifsData) {
+              freshNotifs = notifsData;
+              setRecentNotifications(notifsData);
+            }
           }
 
           const baseSubjects = buildDefaultSubjects(userStrand);
           const strandSubjectKey = getSubjectKey(getStrandSubjectName(userStrand));
 
-          const { data: lessonsData } = await supabase
+          const { data: lessonsData, error: lessonsError } = await supabase
             .from('ai_lessons')
             .select('title, subtitle, progress')
             .order('created_at', { ascending: false });
 
-          if (lessonsData) {
+          if (!lessonsError && lessonsData) {
             const mergedModules = baseSubjects.map(subj => {
               const subjKey = getSubjectKey(subj.title);
               const dbMatch = lessonsData.find(l => {
@@ -180,11 +224,23 @@ export default function DashboardScreen() {
                 : subj;
             });
             setLearningModules(mergedModules);
-          } else {
-            setLearningModules(baseSubjects);
+
+            // Save latest snapshot for offline use
+            await AsyncStorage.setItem(
+              DASHBOARD_CACHE_KEY,
+              JSON.stringify({
+                firstName: freshFirstName,
+                strand: userStrand || 'Explorer',
+                xp: freshXp,
+                streak: freshStreak,
+                isChallengeDone: freshChallengeDone,
+                recentNotifications: freshNotifs,
+                learningModules: mergedModules,
+              })
+            );
           }
         } catch (error) {
-          console.error(error);
+          console.log('Offline mode: using cached dashboard data.');
         } finally {
           setIsLoading(false);
         }
@@ -214,7 +270,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.welcomeContainer}>
             <Text style={styles.greetingText}>Welcome,</Text>
-            <Text style={styles.nameText}>{firstName}!</Text>
+            <Text style={styles.nameText}>{firstName || 'Learner'}!</Text>
           </View>
         </View>
 
@@ -324,8 +380,6 @@ export default function DashboardScreen() {
                         <Text style={[styles.timeText, { color: theme.textSecondary }]}>{getTimeAgo(item.created_at)}</Text>
                       </View>
                     </View>
-
-                    <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
                   </TouchableOpacity>
                 ))
               )}
@@ -385,7 +439,7 @@ const styles = StyleSheet.create({
   cardContainer: { borderRadius: 20, borderWidth: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, overflow: 'hidden' },
   notificationItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1 },
   lastItem: { borderBottomWidth: 0 },
-  itemContent: { flex: 1, paddingRight: 15 },
+  itemContent: { flex: 1 },
   messageText: { fontSize: 14, lineHeight: 20, fontWeight: '400' },
   timeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   unreadDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00e676', marginRight: 6 },

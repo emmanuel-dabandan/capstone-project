@@ -31,13 +31,24 @@ export default function LoginScreen() {
     setIsLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email: email,
         password: password,
       });
 
       if (error) throw error;
-      router.replace('/home' as any);
+
+      const { data: studentData } = await supabase
+        .from('students')
+        .select('profile_completed')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (!studentData?.profile_completed) {
+        router.replace({ pathname: '/profile', params: { onboarding: 'true' } } as any);
+      } else {
+        router.replace('/home' as any);
+      }
     } catch (error: any) {
       Alert.alert("Login Failed", "Invalid email or password. Please try again.");
     } finally {

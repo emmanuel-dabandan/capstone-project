@@ -1,25 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ImageBackground, ScrollView, Animated } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ImageBackground,
+  ScrollView,
+  Animated,
+  ActivityIndicator,
+} from 'react-native';
 import { router, Stack } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
 // 🟠 CUSTOM ANIMATION WRAPPER
-const SlideUpView = ({ children, style }: { children: React.ReactNode, style?: any }) => {
-  const slideAnim = useRef(new Animated.Value(40)).current; 
-  const fadeAnim = useRef(new Animated.Value(0)).current;   
+const SlideUpView = ({ children, style }: { children: React.ReactNode; style?: any }) => {
+  const slideAnim = useRef(new Animated.Value(40)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 400, 
+        duration: 400,
         useNativeDriver: true,
       }),
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400, 
+        duration: 400,
         useNativeDriver: true,
-      })
+      }),
     ]).start();
   }, []);
 
@@ -32,13 +45,14 @@ const SlideUpView = ({ children, style }: { children: React.ReactNode, style?: a
 
 export default function AuthScreen() {
   const [activeView, setActiveView] = useState<'welcome' | 'login' | 'signup'>('welcome');
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [authStep, setAuthStep] = useState(1); 
+  const [authStep, setAuthStep] = useState(1);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -52,6 +66,24 @@ export default function AuthScreen() {
 
   const CODE_LENGTH = 8;
 
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        // Reads from local AsyncStorage — works completely offline
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          router.replace('/home' as any);
+          return;
+        }
+      } catch (e) {
+        console.error('Session check error:', e);
+      } finally {
+        setCheckingSession(false);
+      }
+    };
+    checkExistingSession();
+  }, []);
+
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert("Missing Information", "Please enter both your email and password.");
@@ -59,9 +91,21 @@ export default function AuthScreen() {
     }
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      router.replace('/home' as any);
+
+      // Check if the user has completed their profile
+      const { data: studentData } = await supabase
+        .from('students')
+        .select('profile_completed')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (!studentData?.profile_completed) {
+        router.replace({ pathname: '/profile', params: { onboarding: 'true' } } as any);
+      } else {
+        router.replace('/home' as any);
+      }
     } catch (error: any) {
       Alert.alert("Login Failed", "Invalid email or password. Please try again.");
     } finally {
@@ -83,23 +127,23 @@ export default function AuthScreen() {
     if (isEnrolled && !lrn.trim()) return Alert.alert("Missing Info", "Please enter your 12-digit LRN.");
     if (!strand) return Alert.alert("Missing Info", "Please select a learning strand.");
 
-    setIsLoading(true); 
+    setIsLoading(true);
 
     try {
       const { error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) throw authError;
-      setAuthStep(2); 
+      setAuthStep(2);
     } catch (error: any) {
       Alert.alert("Sign Up Failed", error.message);
     } finally {
-      setIsLoading(false); 
+      setIsLoading(false);
     }
   };
 
   const handleVerifyCode = async () => {
     if (otpCode.length !== CODE_LENGTH) return Alert.alert("Missing Code", "Please enter the full 8-digit code.");
-    
-    setIsLoading(true); 
+
+    setIsLoading(true);
 
     try {
       const { data, error } = await supabase.auth.verifyOtp({ email, token: otpCode, type: 'signup' });
@@ -107,15 +151,20 @@ export default function AuthScreen() {
 
       if (data.user) {
         const { error: studentError } = await supabase.from('students').insert([{
-          id: data.user.id, first_name: firstName, last_name: lastName, email, 
-          lrn_number: isEnrolled ? lrn : null, is_dr_jose_rizal_student: isEnrolled, strand 
+          id: data.user.id,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          lrn_number: isEnrolled ? lrn : null,
+          is_dr_jose_rizal_student: isEnrolled,
+          strand,
         }]);
         if (studentError) throw studentError;
       }
 
       await supabase.auth.signOut();
       Alert.alert("Verified!", "Your account is ready. Please log in.");
-      
+
       setAuthStep(1);
       setActiveView('login');
       setPassword('');
@@ -123,18 +172,26 @@ export default function AuthScreen() {
     } catch (error: any) {
       Alert.alert("Verification Failed", "Incorrect code or it has expired.");
     } finally {
-      setIsLoading(false); 
+      setIsLoading(false);
     }
   };
 
+  if (checkingSession) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff' }}>
+        <ActivityIndicator size="large" color="#2e64e5" />
+      </View>
+    );
+  }
+
   return (
-    <ImageBackground 
-      source={require('../../assets/images/bg.jpeg')} 
+    <ImageBackground
+      source={require('../../assets/images/bg.jpeg')}
       style={styles.backgroundContainer}
       resizeMode="cover"
     >
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       {/* =========================================
           VIEW 1: WELCOME SCREEN
       =========================================== */}
@@ -160,7 +217,7 @@ export default function AuthScreen() {
       {activeView === 'login' && (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.loginContainer}>
           <SlideUpView style={styles.loginContent}>
-            
+
             <TouchableOpacity onPress={() => setActiveView('welcome')} style={styles.loginBackButton}>
               <Text style={styles.backIconText}>←</Text>
             </TouchableOpacity>
@@ -201,7 +258,7 @@ export default function AuthScreen() {
       =========================================== */}
       {activeView === 'signup' && (
         <SlideUpView style={styles.signupContainer}>
-          
+
           {/* 🟢 STEP 1 HEADER: Hides completely when on Step 2 */}
           {authStep === 1 && (
             <View style={styles.headerBar}>
@@ -215,7 +272,7 @@ export default function AuthScreen() {
           {authStep === 1 && (
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <View style={styles.formContainer}>
-                
+
                 <Text style={styles.inputLabel}>First Name</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput style={styles.textInput} value={firstName} onChangeText={setFirstName} placeholder="First Name" />
@@ -271,7 +328,7 @@ export default function AuthScreen() {
                 <Text style={styles.inputLabel}>Select Learning Strand</Text>
                 <View style={styles.dropdownContainer}>
                   <TouchableOpacity style={[styles.dropdownHeader, showDropdown && styles.dropdownHeaderOpen]} onPress={() => setShowDropdown(!showDropdown)} activeOpacity={0.8}>
-                    <Text style={[styles.dropdownHeaderText, !strand && {color: '#999'}]}>
+                    <Text style={[styles.dropdownHeaderText, !strand && { color: '#999' }]}>
                       {strand === 'HUMMS' ? 'HUMMS' : strand === 'CBF' ? 'CBF (Cookery, Bakery, and Food and Beverages)' : 'Select a strand...'}
                     </Text>
                     <Text style={styles.dropdownArrow}>{showDropdown ? '▲' : '▼'}</Text>
@@ -298,7 +355,7 @@ export default function AuthScreen() {
           {authStep === 2 && (
             <View style={styles.otpMainContainer}>
               <View style={styles.otpCard}>
-                
+
                 <Text style={styles.cardTitle}>Check your email!</Text>
                 <Text style={styles.cardSubtitle}>
                   We sent an 8-digit verification code to {email}.
@@ -313,7 +370,7 @@ export default function AuthScreen() {
                       </View>
                     );
                   })}
-                  
+
                   {/* Bulletproof Invisible Input */}
                   <TextInput
                     value={otpCode}
@@ -329,9 +386,9 @@ export default function AuthScreen() {
                   />
                 </View>
 
-                <TouchableOpacity 
-                  style={[styles.verifyButton, isLoading && { opacity: 0.5 }]} 
-                  activeOpacity={0.8} 
+                <TouchableOpacity
+                  style={[styles.verifyButton, isLoading && { opacity: 0.5 }]}
+                  activeOpacity={0.8}
                   onPress={handleVerifyCode}
                   disabled={isLoading}
                 >
@@ -350,9 +407,9 @@ export default function AuthScreen() {
 
           {authStep === 1 && (
             <View style={styles.footerButtonContainer}>
-              <TouchableOpacity 
-                style={[styles.footerButton, isLoading && styles.authLoginBtnDisabled]} 
-                onPress={handleSignUpAndSendOTP} 
+              <TouchableOpacity
+                style={[styles.footerButton, isLoading && styles.authLoginBtnDisabled]}
+                onPress={handleSignUpAndSendOTP}
                 activeOpacity={0.8}
                 disabled={isLoading}
               >
@@ -387,14 +444,14 @@ const styles = StyleSheet.create({
   loginBackButton: { position: 'absolute', top: 60, left: 20 },
   loginHeaderTitle: { fontSize: 32, fontWeight: 'bold', color: '#2e64e5', textAlign: 'center', marginBottom: 10 },
   loginSubText: { fontSize: 16, color: '#000000', textAlign: 'center', marginBottom: 40, paddingBottom: 120 },
-  authLoginBtn: { backgroundColor: '#2e64e5', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 15, marginTop: 30 }, 
+  authLoginBtn: { backgroundColor: '#2e64e5', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 15, marginTop: 30 },
   authLoginBtnDisabled: { backgroundColor: '#8ba6eb' },
   authLoginBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   signupPromptContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   loginSignupPromptText: { fontSize: 15, color: '#555' },
   signupLink: { fontSize: 15, color: '#2e64e5', fontWeight: 'bold' },
 
-  scrollContent: { paddingBottom: 150 }, 
+  scrollContent: { paddingBottom: 150 },
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 60, paddingHorizontal: 20, marginBottom: 10 },
   backButton: { position: 'absolute', left: 20, paddingTop: 60 },
   backIconText: { fontSize: 32, fontWeight: 'bold', color: '#2e64e5', marginTop: -10 },
@@ -402,7 +459,7 @@ const styles = StyleSheet.create({
   inputErrorBorder: { borderBottomColor: '#d9534f', borderBottomWidth: 2 },
   helperText: { fontSize: 12, color: '#000000', marginTop: 4, marginBottom: 5, lineHeight: 16 },
   errorText: { fontSize: 14, color: '#d9534f', marginTop: -20, marginBottom: 10, fontWeight: '600' },
-  
+
   inputLabel: { fontSize: 16, color: '#000000', fontWeight: '600', marginBottom: 8, marginTop: 10, borderRadius: 15 },
   inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#ddd', paddingVertical: 12, paddingHorizontal: 10, marginBottom: 15, borderRadius: 15 },
   textInput: { flex: 1, fontSize: 16, color: '#333' },
@@ -425,14 +482,14 @@ const styles = StyleSheet.create({
   dropdownDivider: { height: 1, backgroundColor: '#eee' },
 
   footerButtonContainer: { position: 'absolute', bottom: 30, left: 20, right: 20 },
-  footerButton: { backgroundColor: '#2e64e5', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 15 }, 
+  footerButton: { backgroundColor: '#2e64e5', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   footerButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 
   // --- 🟢 NEW: OTP Verification Step Styles ---
   otpMainContainer: {
     flex: 1,
-    justifyContent: 'center', 
-    alignItems: 'center',     
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 20,
   },
   otpCard: {
@@ -465,11 +522,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     marginBottom: 25,
-    position: 'relative', 
+    position: 'relative',
   },
   otpBox: {
-    width: 30, 
-    height: 42, 
+    width: 30,
+    height: 42,
     borderWidth: 1,
     borderColor: '#e0e0e0',
     borderRadius: 8,
@@ -478,12 +535,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
   },
   otpBoxActive: {
-    borderColor: '#2e64e5', 
+    borderColor: '#2e64e5',
     backgroundColor: '#ffffff',
     borderWidth: 2,
   },
   otpText: {
-    fontSize: 16, 
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
   },
@@ -494,7 +551,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     opacity: 0,
-    zIndex: 99, 
+    zIndex: 99,
   },
   verifyButton: {
     width: '100%',
@@ -514,6 +571,5 @@ const styles = StyleSheet.create({
   backToEmailText: {
     color: '#666',
     fontSize: 14,
-  }
+  },
 });
-

@@ -102,8 +102,6 @@ export default function NotificationsScreen() {
                     <Text style={[styles.timeText, { color: theme.textSecondary }]}>{getTimeAgo(item.created_at)}</Text>
                   </View>
                 </View>
-
-                <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
               </TouchableOpacity>
             ))
           )}
@@ -123,7 +121,7 @@ const styles = StyleSheet.create({
   cardContainer: { borderRadius: 20, borderWidth: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, overflow: 'hidden' },
   notificationItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 20, paddingHorizontal: 20, borderBottomWidth: 1 },
   lastItem: { borderBottomWidth: 0 },
-  itemContent: { flex: 1, paddingRight: 20 },
+  itemContent: { flex: 1 },
   messageText: { fontSize: 15, lineHeight: 22, fontWeight: '400' },
   messageTextUnread: { fontWeight: 'bold' },
   timeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },

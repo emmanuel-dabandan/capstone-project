@@ -56,50 +56,72 @@ export default function LessonScreen() {
   );
 
   const fetchModules = async () => {
-    try {
-      setLoading(true);
+      const modulesCacheKey = `@learnify_modules_${subjectName}`;
+      const gradesCacheKey = `@learnify_quiz_grades`;
 
-      // Load local completed lesson counts
       try {
-        const raw = await AsyncStorage.getItem(PROGRESS_STORAGE_KEY);
-        if (raw) {
-          setLocalProgressMap(JSON.parse(raw));
+        setLoading(true);
+
+        // 1. Load local completed lesson counts + cached modules & grades
+        try {
+          const [rawProgress, rawModules, rawGrades] = await Promise.all([
+            AsyncStorage.getItem(PROGRESS_STORAGE_KEY),
+            AsyncStorage.getItem(modulesCacheKey),
+            AsyncStorage.getItem(gradesCacheKey),
+          ]);
+
+          if (rawProgress) setLocalProgressMap(JSON.parse(rawProgress));
+          if (rawGrades) setQuizGrades(JSON.parse(rawGrades));
+          if (rawModules) {
+            const cachedMods: DBRow[] = JSON.parse(rawModules);
+            setModules(cachedMods);
+            if (moduleId && typeof moduleId === 'string') {
+              setExpandedModuleId(moduleId);
+            } else if (cachedMods.length > 0 && !expandedModuleId) {
+              setExpandedModuleId(cachedMods[0].id);
+            }
+          }
+        } catch (e) {
+          console.error('Error reading local cache:', e);
         }
-      } catch (e) {
-        console.error('Error reading local progress:', e);
-      }
 
-      const { data: { user } } = await supabase.auth.getUser();
+        // 2. Sync fresh data from Supabase if online (uses getSession() instead of getUser())
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
 
-      let query = supabase.from('ai_lessons').select('*').order('created_at', { ascending: true }).limit(12);
-      if (subjectName && subjectName !== 'Course Modules') {
-        query = query.eq('title', subjectName);
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      setModules(data || []);
-
-      if (moduleId && typeof moduleId === 'string') {
-        setExpandedModuleId(moduleId);
-      } else if (data && data.length > 0 && !expandedModuleId) {
-        setExpandedModuleId(data[0].id);
-      }
-
-      if (user) {
-        const { data: gradesData } = await supabase
-          .from('quiz_grades')
-          .select('id, module_title, score, total_items')
-          .eq('student_id', user.id);
-        if (gradesData) {
-          setQuizGrades(gradesData);
+        let query = supabase.from('ai_lessons').select('*').order('created_at', { ascending: true }).limit(12);
+        if (subjectName && subjectName !== 'Course Modules') {
+          query = query.eq('title', subjectName);
         }
+        const { data, error } = await query;
+        if (!error && data) {
+          setModules(data);
+          await AsyncStorage.setItem(modulesCacheKey, JSON.stringify(data));
+
+          if (moduleId && typeof moduleId === 'string') {
+            setExpandedModuleId(moduleId);
+          } else if (data.length > 0 && !expandedModuleId) {
+            setExpandedModuleId(data[0].id);
+          }
+        }
+
+        if (user) {
+          const { data: gradesData, error: gradesError } = await supabase
+            .from('quiz_grades')
+            .select('id, module_title, score, total_items')
+            .eq('student_id', user.id);
+
+          if (!gradesError && gradesData) {
+            setQuizGrades(gradesData);
+            await AsyncStorage.setItem(gradesCacheKey, JSON.stringify(gradesData));
+          }
+        }
+      } catch (error: any) {
+        console.log('Offline mode: using cached modules.');
+      } finally {
+        setLoading(false);
       }
-    } catch (error: any) {
-      console.error('Error fetching modules:', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   const findModuleGrade = (subjTitle: string, modTitle: string, isSingleModule: boolean): QuizGradeRecord | undefined => {
     const norm = (s: string) => (s || '').trim().toLowerCase();
@@ -292,18 +314,30 @@ export default function LessonScreen() {
                             return;
                           }
 
+                          const targetSubj = mod.title || subjectName;
+
                           if (recordedGrade) {
                             Alert.alert(
                               'Assessment Completed',
-                              `You already completed this evaluation with a score of ${recordedGrade.score} / ${recordedGrade.total_items}.`
+                              `You already passed this evaluation with a recorded score of ${recordedGrade.score} / ${recordedGrade.total_items}. Retakes are no longer allowed, but you can use Practice to review the lessons.`,
+                              [
+                                { text: 'Close', style: 'cancel' },
+                                {
+                                  text: 'Go to Practice',
+                                  onPress: () =>
+                                    router.push({
+                                      pathname: '/practice',
+                                      params: { subject: targetSubj, module: moduleTitle },
+                                    } as any),
+                                },
+                              ]
                             );
                             return;
                           }
 
-                          const targetSubj = mod.title || subjectName;
                           Alert.alert(
                             'Assessment Readiness',
-                            'This 15-item evaluation can only be taken ONCE. Your final score will be permanently recorded.\n\nHave you fully reviewed the module, or would you like to practice first?',
+                            'You must score at least 75% to pass this evaluation. You may retake it until you pass; once you reach 75% or higher, your score will be permanently recorded and locked.\n\nWould you like to practice first or start now?',
                             [
                               {
                                 text: 'Practice First',

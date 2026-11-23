@@ -15,6 +15,7 @@ type QuizQuestion = {
 };
 
 const QUIZ_TIMEOUT_MS = 45000;
+const PASSING_PERCENTAGE = 75;
 
 const isValidQuestion = (q: any): q is QuizQuestion =>
   !!q &&
@@ -61,10 +62,14 @@ export default function QuizScreen() {
         navigateHome();
         return true;
       }
-      Alert.alert('Abandon Assessment?', 'If you leave now, you will score a 0 and cannot retake it.', [
-        { text: 'Stay', style: 'cancel' },
-        { text: 'Leave', style: 'destructive', onPress: navigateHome }
-      ]);
+      Alert.alert(
+        'Leave Assessment?',
+        'Your current progress will not be saved, and you will need to start over.',
+        [
+          { text: 'Stay', style: 'cancel' },
+          { text: 'Leave', style: 'destructive', onPress: navigateHome }
+        ]
+      );
       return true;
     };
 
@@ -93,7 +98,7 @@ export default function QuizScreen() {
         if (existingGrade) {
           setQuestions([]);
           setCanRetry(false);
-          setErrorMessage('You have already recorded a grade for this assessment.');
+          setErrorMessage('You have already passed and recorded a grade for this assessment. Use Practice to review this module.');
           return;
         }
       }
@@ -148,7 +153,7 @@ export default function QuizScreen() {
 
       if (insertError) {
         if ((insertError as any).code === '23505') {
-          Alert.alert('Already Completed', 'A grade is already recorded for this assessment.', [
+          Alert.alert('Already Completed', 'A passing grade is already recorded for this assessment.', [
             { text: 'OK', onPress: navigateHome }
           ]);
           return;
@@ -183,8 +188,22 @@ export default function QuizScreen() {
       setCurrentIndex(prev => prev + 1);
       setSelectedAnswer('');
     } else {
-      saveGrade(newScore);
+      const percentage = questions.length > 0 ? (newScore / questions.length) * 100 : 0;
+      if (percentage >= PASSING_PERCENTAGE) {
+        saveGrade(newScore);
+      } else {
+        // Below 75%: do not record grade so the student can retake
+        setQuizComplete(true);
+      }
     }
+  };
+
+  const handleRetake = () => {
+    setCurrentIndex(0);
+    setSelectedAnswer('');
+    setScore(0);
+    setQuizComplete(false);
+    fetchUniqueQuiz();
   };
 
   if (isLoading) {
@@ -198,24 +217,58 @@ export default function QuizScreen() {
   }
 
   if (quizComplete) {
-    const passed = score >= (questions.length / 2);
+    const percentage = questions.length > 0 ? Math.round((score / questions.length) * 100) : 0;
+    const passed = percentage >= PASSING_PERCENTAGE;
+
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
         <View style={[styles.successContainer, { backgroundColor: theme.bg }]}>
           <Ionicons name={passed ? 'checkmark-circle' : 'alert-circle'} size={80} color={passed ? '#4caf50' : '#f44336'} />
-          <Text style={[styles.successTitle, { color: theme.textPrimary }]}>Assessment Complete</Text>
-          <Text style={[styles.successMessage, { color: theme.textSecondary }]}>Your permanent grade has been recorded in the ALS system.</Text>
+          <Text style={[styles.successTitle, { color: theme.textPrimary }]}>
+            {passed ? 'Assessment Passed!' : 'Keep Trying!'}
+          </Text>
+          <Text style={[styles.successMessage, { color: theme.textSecondary }]}>
+            {passed
+              ? 'Your passing grade has been permanently recorded in the ALS system. You can use Practice anytime to review this lesson.'
+              : `You need at least ${PASSING_PERCENTAGE}% to pass and record your grade. Review the lesson or retake the assessment when ready.`}
+          </Text>
 
           <View style={[styles.rewardBox, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
-            <Text style={[styles.rewardLabel, { color: theme.textSecondary }]}>Final Score</Text>
+            <Text style={[styles.rewardLabel, { color: theme.textSecondary }]}>
+              {passed ? 'Recorded Score' : 'Attempt Score (Not Recorded)'}
+            </Text>
             <Text style={[styles.rewardValue, { color: passed ? '#4caf50' : '#f44336' }]}>
-              {score} / {questions.length}
+              {score} / {questions.length} ({percentage}%)
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.returnButton} onPress={navigateHome}>
-            <Text style={styles.returnButtonText}>Back to Module</Text>
-          </TouchableOpacity>
+          {passed ? (
+            <TouchableOpacity style={styles.returnButton} onPress={navigateHome}>
+              <Text style={styles.returnButtonText}>Back to Module</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: '100%', gap: 12 }}>
+              <TouchableOpacity style={styles.returnButton} onPress={handleRetake}>
+                <Text style={styles.returnButtonText}>Retake Assessment</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.secondaryButton, { borderColor: theme.borderColor, backgroundColor: theme.cardBg }]}
+                onPress={() =>
+                  router.replace({
+                    pathname: '/practice',
+                    params: { subject: subjectTitle, module: gradeTitle },
+                  } as any)
+                }
+              >
+                <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Practice First</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.backLink} onPress={navigateHome}>
+                <Text style={styles.backLinkText}>Back to Module</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -253,10 +306,14 @@ export default function QuizScreen() {
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
-          Alert.alert('Abandon Assessment?', 'If you leave now, you will score a 0 and cannot retake it.', [
-            { text: 'Stay', style: 'cancel' },
-            { text: 'Leave', style: 'destructive', onPress: navigateHome }
-          ]);
+          Alert.alert(
+            'Leave Assessment?',
+            'Your current progress will not be saved, and you will need to start over.',
+            [
+              { text: 'Stay', style: 'cancel' },
+              { text: 'Leave', style: 'destructive', onPress: navigateHome }
+            ]
+          );
         }} style={styles.closeButton}>
           <Ionicons name="close" size={28} color={theme.textSecondary} />
         </TouchableOpacity>
@@ -320,7 +377,7 @@ const styles = StyleSheet.create({
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
   errorTitle: { fontSize: 24, fontWeight: '900', marginTop: 20, marginBottom: 10 },
   errorText: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 30 },
-  backLink: { marginTop: 18, paddingVertical: 10, paddingHorizontal: 20 },
+  backLink: { marginTop: 6, paddingVertical: 10, paddingHorizontal: 20, alignItems: 'center' },
   backLinkText: { fontSize: 16, fontWeight: 'bold', color: '#2e64e5' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
   closeButton: { paddingRight: 15 },
@@ -340,10 +397,12 @@ const styles = StyleSheet.create({
   submitButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
   successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
   successTitle: { fontSize: 28, fontWeight: '900', marginTop: 28, marginBottom: 10 },
-  successMessage: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 40 },
-  rewardBox: { paddingVertical: 20, paddingHorizontal: 40, borderRadius: 20, alignItems: 'center', borderWidth: 1, marginBottom: 40, width: '100%' },
-  rewardLabel: { fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 },
-  rewardValue: { fontSize: 36, fontWeight: '900' },
+  successMessage: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 32 },
+  rewardBox: { paddingVertical: 20, paddingHorizontal: 30, borderRadius: 20, alignItems: 'center', borderWidth: 1, marginBottom: 32, width: '100%' },
+  rewardLabel: { fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 },
+  rewardValue: { fontSize: 32, fontWeight: '900' },
   returnButton: { backgroundColor: '#2e64e5', paddingVertical: 18, paddingHorizontal: 40, borderRadius: 16, width: '100%', alignItems: 'center' },
   returnButtonText: { color: '#ffffff', fontSize: 18, fontWeight: 'bold' },
+  secondaryButton: { paddingVertical: 16, paddingHorizontal: 40, borderRadius: 16, width: '100%', alignItems: 'center', borderWidth: 1.5 },
+  secondaryButtonText: { fontSize: 16, fontWeight: 'bold' },
 });
