@@ -1,31 +1,38 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAppTheme } from '../lib/ThemeContext';
 
-const { width } = Dimensions.get('window');
+interface ModuleMasteryItem {
+  id: string;
+  title: string;
+  score: number;
+  total: number;
+  percentage: number;
+}
 
-const accuracyData = [
-  { type: 'Multiple Choice', percentage: 85 },
-  { type: 'Drag & Drop', percentage: 92 },
-  { type: 'Matching', percentage: 78 },
-  { type: 'True / False', percentage: 88 },
-  { type: 'Fill in Blanks', percentage: 65 },
-];
-
-const timelineData = [
-  { date: 'Oct 05', title: 'Mastered: Food Safety Basics', type: 'module' },
-  { date: 'Oct 02', title: '7-Day Streak Achieved!', type: 'milestone' },
-];
+interface TimelineItem {
+  id: string;
+  date: string;
+  title: string;
+  type: 'module' | 'milestone';
+}
 
 const formatLocalDateKey = (date: Date): string => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+};
+
+const formatShortDate = (rawDate?: string | null): string => {
+  if (!rawDate) return 'Recent';
+  const parsed = new Date(rawDate);
+  if (isNaN(parsed.getTime())) return 'Recent';
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
 };
 
 const normalizeLogDateKey = (rawDate: string): string => {
@@ -66,10 +73,13 @@ export default function StatsScreen() {
   const [todayXp, setTodayXp] = useState(0);
   const [streak, setStreak] = useState(0);
   const [lessonsCompleted, setLessonsCompleted] = useState(0);
-  const [avgAccuracy, setAvgAccuracy] = useState(82);
+  const [avgAccuracy, setAvgAccuracy] = useState(0);
   const [activeMonthDays, setActiveMonthDays] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [xpData, setXpData] = useState<number[]>(Array(30).fill(0));
+
+  const [moduleMastery, setModuleMastery] = useState<ModuleMasteryItem[]>([]);
+  const [milestones, setMilestones] = useState<TimelineItem[]>([]);
 
   const todayDate = new Date();
   const currentYear = todayDate.getFullYear();
@@ -90,12 +100,13 @@ export default function StatsScreen() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { data: profile } = await supabase
         .from('students')
-        .select('first_name, xp, streak')
+        .select('first_name, xp, streak, last_challenge_date')
         .eq('id', user.id)
         .single();
 
@@ -179,21 +190,76 @@ export default function StatsScreen() {
 
       const { data: grades } = await supabase
         .from('quiz_grades')
-        .select('score, total_items')
-        .eq('student_id', user.id);
+        .select('id, module_title, score, total_items, taken_at, created_at')
+        .eq('student_id', user.id)
+        .order('created_at', { ascending: false });
+
+      const dynamicMastery: ModuleMasteryItem[] = [];
+      const dynamicTimeline: TimelineItem[] = [];
 
       if (grades && grades.length > 0) {
         let totalScore = 0;
         let totalItems = 0;
+
         grades.forEach((g: any) => {
-          totalScore += Number(g.score) || 0;
-          totalItems += Number(g.total_items) || 0;
+          const score = Number(g.score) || 0;
+          const total = Number(g.total_items) || 0;
+          const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+
+          totalScore += score;
+          totalItems += total;
+
+          dynamicMastery.push({
+            id: String(g.id),
+            title: g.module_title || 'Module Assessment',
+            score,
+            total,
+            percentage: pct,
+          });
+
+          dynamicTimeline.push({
+            id: `grade-${g.id}`,
+            date: formatShortDate(g.taken_at || g.created_at),
+            title: `Passed: ${g.module_title} (${score}/${total})`,
+            type: 'module',
+          });
         });
-        if (totalItems > 0) {
-          setAvgAccuracy(Math.round((totalScore / totalItems) * 100));
-        }
+
+        setAvgAccuracy(totalItems > 0 ? Math.round((totalScore / totalItems) * 100) : 0);
         completedCount = Math.max(completedCount, grades.length);
+      } else {
+        setAvgAccuracy(0);
       }
+
+      if (effectiveStreak > 0) {
+        dynamicTimeline.push({
+          id: 'streak-milestone',
+          date: formatShortDate(new Date().toISOString()),
+          title: `${effectiveStreak}-Day Learning Streak Achieved!`,
+          type: 'milestone',
+        });
+      }
+
+      if (profile?.last_challenge_date) {
+        dynamicTimeline.push({
+          id: 'gauntlet-milestone',
+          date: formatShortDate(profile.last_challenge_date),
+          title: 'Daily Challenge (Gauntlet) Completed (+150 XP)',
+          type: 'milestone',
+        });
+      }
+
+      if (profileXp > 0) {
+        dynamicTimeline.push({
+          id: 'xp-milestone',
+          date: formatShortDate(new Date().toISOString()),
+          title: `Earned ${profileXp.toLocaleString()} Total XP`,
+          type: 'milestone',
+        });
+      }
+
+      setModuleMastery(dynamicMastery);
+      setMilestones(dynamicTimeline.slice(0, 6));
 
       const estimatedFromXp = Math.floor(profileXp / 50);
       setLessonsCompleted(Math.max(completedCount, estimatedFromXp));
@@ -353,41 +419,69 @@ export default function StatsScreen() {
             </View>
           </View>
 
-          {/* ACTIVITY MASTERY */}
+          {/* ASSESSMENT MASTERY (DYNAMIC FROM QUIZ_GRADES) */}
           <View style={styles.sectionContainer}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Activity Mastery</Text>
-            <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>Your average accuracy across different mechanics.</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Assessment Mastery</Text>
+            <Text style={[styles.sectionDescription, { color: theme.textSecondary }]}>
+              Your recorded passing scores across completed module assessments.
+            </Text>
             <View style={[styles.cardContainer, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
-              {accuracyData.map((item, index) => (
-                <View key={index} style={styles.masteryWrapper}>
-                  <View style={styles.masteryHeader}>
-                    <Text style={[styles.masteryLabel, { color: theme.textPrimary }]}>{item.type}</Text>
-                    <Text style={[styles.masteryPercentage, { color: theme.isDark ? '#60a5fa' : '#2e64e5' }]}>{item.percentage}%</Text>
+              {moduleMastery.length === 0 ? (
+                <Text style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: 8 }}>
+                  No assessments completed yet. Finish a module and pass its final quiz to see your mastery here.
+                </Text>
+              ) : (
+                moduleMastery.map((item) => (
+                  <View key={item.id} style={styles.masteryWrapper}>
+                    <View style={styles.masteryHeader}>
+                      <Text style={[styles.masteryLabel, { color: theme.textPrimary, flex: 1, paddingRight: 10 }]} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Text style={[styles.masteryPercentage, { color: theme.isDark ? '#60a5fa' : '#2e64e5' }]}>
+                        {item.score}/{item.total} ({item.percentage}%)
+                      </Text>
+                    </View>
+                    <View style={[styles.masteryBackground, { backgroundColor: theme.isDark ? '#334155' : '#e0e8f9' }]}>
+                      <View
+                        style={[
+                          styles.masteryFill,
+                          {
+                            width: `${item.percentage}%`,
+                            backgroundColor: item.percentage >= 75 ? '#10B981' : (theme.isDark ? '#60a5fa' : '#2e64e5'),
+                          },
+                        ]}
+                      />
+                    </View>
                   </View>
-                  <View style={[styles.masteryBackground, { backgroundColor: theme.isDark ? '#334155' : '#e0e8f9' }]}>
-                    <View style={[styles.masteryFill, { width: `${item.percentage}%`, backgroundColor: theme.isDark ? '#60a5fa' : '#2e64e5' }]} />
-                  </View>
-                </View>
-              ))}
+                ))
+              )}
             </View>
           </View>
 
-          {/* TIMELINE */}
+          {/* RECENT MILESTONES (DYNAMIC FROM USER ACTIVITY) */}
           <View style={styles.sectionContainer}>
             <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Recent Milestones</Text>
             <View style={[styles.cardContainer, { backgroundColor: theme.cardBg, borderColor: theme.borderColor }]}>
-              {timelineData.map((item, index) => (
-                <View key={index} style={styles.timelineRow}>
-                  <View style={styles.timelineGraphics}>
-                    <View style={[styles.timelineNode, item.type === 'milestone' && styles.timelineNodeAccent]} />
-                    {index !== timelineData.length - 1 && <View style={[styles.timelineLine, { backgroundColor: theme.divider }]} />}
+              {milestones.length === 0 ? (
+                <Text style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: 8 }}>
+                  Complete a lesson, daily challenge, or quiz to unlock your first milestone!
+                </Text>
+              ) : (
+                milestones.map((item, index) => (
+                  <View key={item.id} style={styles.timelineRow}>
+                    <View style={styles.timelineGraphics}>
+                      <View style={[styles.timelineNode, item.type === 'milestone' && styles.timelineNodeAccent]} />
+                      {index !== milestones.length - 1 && (
+                        <View style={[styles.timelineLine, { backgroundColor: theme.divider }]} />
+                      )}
+                    </View>
+                    <View style={styles.timelineContent}>
+                      <Text style={[styles.timelineDate, { color: theme.textSecondary }]}>{item.date}</Text>
+                      <Text style={[styles.timelineItemTitle, { color: theme.textPrimary }]}>{item.title}</Text>
+                    </View>
                   </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={[styles.timelineDate, { color: theme.textSecondary }]}>{item.date}</Text>
-                    <Text style={[styles.timelineItemTitle, { color: theme.textPrimary }]}>{item.title}</Text>
-                  </View>
-                </View>
-              ))}
+                ))
+              )}
             </View>
           </View>
 
